@@ -7,9 +7,16 @@
   Administrator of the National Aeronautics and Space Administration.
 - Лицензия: Apache License, Version 2.0 — [third_party/nasa-cea/LICENSE.txt](third_party/nasa-cea/LICENSE.txt)
 - Уведомление NASA: [third_party/nasa-cea/NOTICE.txt](third_party/nasa-cea/NOTICE.txt)
-- Термодинамическая и транспортная базы: NASA TP-2002-211556.
+- Термодинамическая и транспортная базы: NASA TP-2002-211556. Файл
+  `src/astra/data/thermo.inp` скопирован без изменений из репозитория NASA CEA
+  (используется для поиска и справки в разделе «База веществ»).
 - Контрольные задачи: NASA RP-1311, часть 2.
 
 Astra не изменяет исходный код и алгоритмы NASA CEA. Упоминание NASA
 указывает только на происхождение вычислительного ядра и не означает
 одобрения продукта NASA.
+
+## Qt for Python (PySide6)
+
+- Источник: https://www.qt.io/qt-for-python
+- Лицензия: LGPL-3.0 (используется как динамически подключаемая библиотека без изменений).

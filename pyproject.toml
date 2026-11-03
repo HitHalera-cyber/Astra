@@ -11,13 +11,24 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "cea==3.3.4",
     "numpy>=1.26",
+    # PySide6 6.12.0 на Python 3.11 ошибочно уменьшает счётчик ссылок None при каждом
+    # вызове метода без возвращаемого значения, и приложение со временем аварийно
+    # завершается (на 3.12+ объект None бессмертен). См. tests/test_gui.py.
+    "PySide6>=6.6,<6.12; python_version < '3.12'",
+    "PySide6>=6.6; python_version >= '3.12'",
 ]
+
+[project.gui-scripts]
+astra = "astra.app.main:main"
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"astra.data" = ["thermo.inp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
