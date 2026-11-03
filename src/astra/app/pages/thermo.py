@@ -4,17 +4,30 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QTabWidget, QVBoxLayout, QWidget
 
-from astra.core import EquilibriumResult, NozzleResult, StatePoint, core_version, q
+from astra.core import EquilibriumResult, NozzleResult, StatePoint, WAVE_PROBLEMS, WaveResult, core_version, q
 from astra.core.notation import EQUILIBRIUM_PROBLEMS
 
 from ..widgets import Page, card, fmt, make_table, ro_item
 from ..worker import CalcThread
 
+TRANSPORT_ROWS = ["eta", "lam", "lam_fr", "pr", "pr_fr"]
 NOZZLE_ROWS = ["p", "t", "rho", "i", "H", "s", "cp", "cp_fr", "k", "mu", "mu_c", "a", "w", "M",
                "eps", "pk_p", "c_star", "kt", "kt_p", "isp", "isp_vac", "isp_amb", "kt_n",
-               "f_kr", "f_a", "thrust"]
+               "f_kr", "f_a", "thrust"] + TRANSPORT_ROWS
 EQ_ROWS = ["p", "t", "rho", "v", "i", "u", "s", "g", "cp", "cp_fr", "cv", "cv_fr", "k", "mu", "mu_c", "a",
-           "Km", "alpha"]
+           "Km", "alpha"] + TRANSPORT_ROWS
+SHOCK_ROWS = ["w", "M", "w_lab", "w_refl", "p", "t", "rho", "v", "i", "u", "s", "g", "cp", "cp_fr", "cv", "cv_fr",
+              "k", "mu", "mu_c", "a", "p_ratio", "t_ratio", "rho_ratio", "mu_ratio"] + TRANSPORT_ROWS
+DET_ROWS = ["D", "M_D", "p", "t", "rho", "v", "i", "u", "s", "g", "cp", "cp_fr", "cv", "cv_fr", "k", "mu", "mu_c",
+            "a", "p_ratio", "t_ratio", "rho_ratio", "mu_ratio"] + TRANSPORT_ROWS
+
+# карточки основных величин для каждого вида расчёта: (ключ, точка-источник)
+METRICS = {
+    "nozzle": ["tk", "c_star", "k", "mu", "isp_vac"],
+    "equilibrium": ["t", "p", "k", "mu", "a"],
+    "shock": ["t", "p", "w_lab", "p_ratio", "rho_ratio"],
+    "detonation": ["D", "p", "t", "p_ratio", "k"],
+}
 
 
 def point_header(p: StatePoint) -> str:
@@ -22,7 +35,21 @@ def point_header(p: StatePoint) -> str:
         return f"{p.kind_name}\nε = {fmt(p.target if p.target is not None else p['eps'], 6)}"
     if p.kind == "pressure_ratio":
         return f"{p.kind_name}\nPк/P = {fmt(p.target if p.target is not None else p['pk_p'], 6)}"
+    if p.kind.startswith("shock_") and p.target is not None:
+        by_mach = p.target_key == "mach1"
+        return f"{p.kind_name}\n{'M₁' if by_mach else 'W₁'} = {fmt(p.target)}{'' if by_mach else ' м/с'}"
+    if p.kind.startswith("det_") and p.target is not None:
+        return f"{p.kind_name}\nP₁ = {fmt(p.target * 1e-6, 5)} МПа, T₁ = {fmt(p.t_target, 5)} К"
     return p.kind_name
+
+
+def _wave_case_label(r: WaveResult, case: dict) -> str:
+    if r.problem == "shock":
+        sym = "M₁" if r.inputs.get("mach1") else "W₁"
+        unit = "" if sym == "M₁" else " м/с"
+        return f"{sym} = {fmt(case['target'])}{unit}"
+    p, t = case["target"]
+    return f"P₁ = {fmt(p * 1e-6)} МПа, T₁ = {fmt(t)} К"
 
 
 class ThermoPage(Page):
@@ -51,18 +78,21 @@ class ThermoPage(Page):
         self.body.addWidget(self.status)
 
         cards = QHBoxLayout()
-        self.metrics: dict[str, QLabel] = {}
-        for key in ("tk", "c_star", "k", "mu", "isp_vac"):
+        self.metric_cards: list[tuple[QLabel, QLabel]] = []
+        for _ in range(5):
             frame, lay = card()
-            name = QLabel(q(key).label())
+            name = QLabel("")
             name.setObjectName("Muted")
+            name.setWordWrap(True)
             val = QLabel("—")
             val.setObjectName("Metric")
             lay.addWidget(name)
             lay.addWidget(val)
-            self.metrics[key] = val
+            self.metric_cards.append((name, val))
             cards.addWidget(frame)
         self.body.addLayout(cards)
+        self.metrics: dict[str, QLabel] = {}
+        self._set_metric_keys(METRICS["nozzle"])
 
         self.tabs = QTabWidget()
         self.values_table = make_table(["Величина"])
@@ -83,17 +113,40 @@ class ThermoPage(Page):
         state.data_changed.connect(self.refresh)
         self.refresh()
 
+    def _set_metric_keys(self, keys: list[str]) -> None:
+        self.metrics = {}
+        for (name, val), key in zip(self.metric_cards, keys):
+            name.setText(q(key).label())
+            name.setToolTip(q(key).name)
+            val.setText("—")
+            self.metrics[key] = val
+
+    def _fill_metrics(self, kind: str, point: StatePoint | None, extra: dict[str, float] | None = None) -> None:
+        self._set_metric_keys(METRICS[kind])
+        for key, label in self.metrics.items():
+            if extra and key in extra:
+                v = extra[key]
+            else:
+                v = point[key] if point is not None else None
+            label.setText(fmt(q(key).to_display(v), 5) if v is not None else "—")
+
     def refresh(self) -> None:
-        c = self.state.project.conditions
-        comps = ", ".join(x.name for x in self.state.project.components) or "компоненты не заданы"
-        kind = "Камера и сопло" if c.calc == "rocket" else EQUILIBRIUM_PROBLEMS[c.calc]
-        ratio = f"Kм = {fmt(c.ratio_value)}" if c.ratio_kind == "Km" else f"α = {fmt(c.ratio_value)}"
+        p = self.state.project
+        c = p.conditions
+        comps = ", ".join(x.name for x in p.components) or "компоненты не заданы"
+        if c.calc == "rocket":
+            kind = "Камера и сопло"
+        else:
+            kind = WAVE_PROBLEMS.get(c.calc) or EQUILIBRIUM_PROBLEMS[c.calc]
+        if p.components and all(x.role == "mixture" for x in p.components):
+            ratio = "состав задан смесью"
+        else:
+            ratio = f"Kм = {fmt(c.ratio_value)}" if c.ratio_kind == "Km" else f"α = {fmt(c.ratio_value)}"
         self.summary.setText(f"{kind}; {comps}; {ratio}; ядро NASA CEA {core_version()}")
 
     def clear(self) -> None:
         self.status.setText("Расчёт ещё не выполнялся.")
-        for v in self.metrics.values():
-            v.setText("—")
+        self._set_metric_keys(METRICS["nozzle"])
         self.values_table.setRowCount(0)
         self.comp_table.setRowCount(0)
         self.notes.setText("")
@@ -131,7 +184,7 @@ class ThermoPage(Page):
         self.state.result_ready.emit(result)
 
     # --- отображение
-    def show_result(self, result: EquilibriumResult | NozzleResult) -> None:
+    def show_result(self, result: EquilibriumResult | NozzleResult | WaveResult) -> None:
         if result.converged:
             self._set_status(result.message, "Good")
         else:
@@ -144,21 +197,37 @@ class ThermoPage(Page):
                 notes += ["", "<b>Предупреждения:</b>"] + [f"• {w}" for w in result.warnings]
             chamber = next((p for p in result.points if p.kind in ("chamber", "chamber_end")), None)
             exits = result.exits()
-            last = exits[-1] if exits else None
-            self.metrics["tk"].setText(fmt(chamber["t"], 5) if chamber else "—")
             nozzle_pts = [p for p in result.points if "c_star" in p.values]
-            self.metrics["c_star"].setText(fmt(nozzle_pts[0]["c_star"], 5) if nozzle_pts else "—")
-            self.metrics["k"].setText(fmt(chamber["k"], 5) if chamber else "—")
-            self.metrics["mu"].setText(fmt(chamber["mu"], 5) if chamber else "—")
-            self.metrics["isp_vac"].setText(fmt(last["isp_vac"], 5) if last else "—")
+            self._fill_metrics("nozzle", chamber, {
+                "tk": chamber["t"] if chamber else None,
+                "c_star": nozzle_pts[0]["c_star"] if nozzle_pts else None,
+                "isp_vac": exits[-1]["isp_vac"] if exits else None})
+            if exits:
+                self.metric_cards[4][0].setText(q("isp_vac").label() + f" (ε = {fmt(exits[-1]['eps'], 4)})")
+        elif isinstance(result, WaveResult):
+            rows = SHOCK_ROWS if result.problem == "shock" else DET_ROWS
+            points = result.points
+            notes = [f"<b>Постановка:</b> {result.problem_name}"] + [f"• {a}" for a in result.assumptions]
+            notes += ["", "<b>Варианты:</b>"] + [
+                f"• {i + 1}: {_wave_case_label(result, c)} — {'расчёт выполнен' if c['converged'] else c['message']}"
+                for i, c in enumerate(result.cases)]
+            if result.warnings:
+                notes += ["", "<b>Сообщения ядра:</b>"] + [f"• {w}" for w in result.warnings]
+            after = [p for p in points if p.kind in ("shock_incident", "det_products")]
+            self._fill_metrics(result.problem, after[0] if after else None)
+            if len(result.cases) > 1:
+                first = _wave_case_label(result, result.cases[0])
+                for name, _ in self.metric_cards:
+                    name.setText(f"{name.text()} ({first})")
         else:
             points, rows = [result.point], EQ_ROWS
             notes = [f"<b>Постановка:</b> {EQUILIBRIUM_PROBLEMS[result.problem]}"]
-            for k in ("c_star", "isp_vac"):
-                self.metrics[k].setText("—")
-            self.metrics["tk"].setText(fmt(result["t"], 5))
-            self.metrics["k"].setText(fmt(result["k"], 5))
-            self.metrics["mu"].setText(fmt(result["mu"], 5))
+            if result.inputs.get("state_from_reactants"):
+                key = {"H": "i", "U": "u", "S": "s"}[result.problem[0]]
+                qt = q(key)
+                notes.append(f"• {qt.symbol} = {fmt(qt.to_display(result.inputs[key]))} {qt.unit} — "
+                             "по исходным компонентам при их начальных температурах.")
+            self._fill_metrics("equilibrium", result.point)
         self.notes.setText("<br>".join(notes))
 
         # параметры: строки — величины, столбцы — точки

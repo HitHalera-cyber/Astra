@@ -140,6 +140,37 @@ class ListField(QWidget):
         self.edit.setText(fmt_list(self.quantity.to_display(v) for v in si))
 
 
+class SpeciesListField(QWidget):
+    """Список веществ базы NASA CEA через пробел или «;» (only, omit, insert)."""
+
+    edited = Signal()
+
+    def __init__(self, label: str, tip: str, parent: QWidget | None = None):
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.label = QLabel(label)
+        self.label.setMinimumWidth(90)
+        self.edit = QLineEdit()
+        self.edit.setPlaceholderText("имена веществ базы через пробел, например: H2O CO2 OH")
+        self.edit.setToolTip(tip)
+        self.label.setToolTip(tip)
+        self.edit.editingFinished.connect(self.edited.emit)
+        lay.addWidget(self.label)
+        lay.addWidget(self.edit, 1)
+
+    def values(self) -> list[str]:
+        from astra.core import species_db
+        names = [n for n in self.edit.text().replace(";", " ").split() if n]
+        unknown = [n for n in names if species_db.by_name(n) is None]
+        if unknown:
+            raise InputError(f"{self.label.text()}: нет в базе NASA CEA: {', '.join(unknown)}.")
+        return names
+
+    def set_values(self, names: Iterable[str]) -> None:
+        self.edit.setText(" ".join(names))
+
+
 def card(title: str | None = None) -> tuple[QFrame, QVBoxLayout]:
     frame = QFrame()
     frame.setObjectName("Card")

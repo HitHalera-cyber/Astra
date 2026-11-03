@@ -28,6 +28,7 @@ STATE_ROWS = {  # строка эталона -> (ключ Astra, множите
     "GAMMAs": ("k", 1.0),
     "SON VEL,M/SEC": ("a", 1.0),
     "MACH NUMBER": ("M", 1.0),
+    "RHO, KG/CU M": ("rho", 1.0),
 }
 PERF_ROWS = {
     "Ae/At": ("eps", 1.0),
@@ -55,8 +56,8 @@ def compare_block(block, points, match=("P, BAR", "p", 1 / BAR)):
                 expected = block.value(label, col)
                 assert close(pt[key] * scale, expected, abs_=1e-6), f"{label} в столбце {col}: {pt[key] * scale} != {expected}"
                 checked += 1
-        if col == 0:
-            continue
+        if col == 0 or pt.kind in ("injector", "chamber_inf", "chamber_end"):
+            continue  # характеристики сопла сравниваются начиная с критического сечения
         for label, (key, scale) in PERF_ROWS.items():
             if label in block.rows:
                 expected = block.value(label, col)
