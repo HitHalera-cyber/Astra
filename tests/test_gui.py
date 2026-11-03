@@ -1,12 +1,13 @@
 """Проверка интерфейса без экрана (QT_QPA_PLATFORM=offscreen)."""
 
+import gc
 import os
 
 import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
-from PySide6.QtCore import QSettings  # noqa: E402
+from PySide6.QtCore import QEvent, QSettings  # noqa: E402
 
 from astra.core import species_db  # noqa: E402
 
@@ -24,7 +25,16 @@ def window(app, tmp_path):
     w = create_window(tmp_path / "projects.sqlite")
     w.show()
     yield w
+    # окно удаляется сразу, а не сборщиком мусора при завершении интерпретатора
+    page = w.pages.get("thermo")
+    if page is not None and page.thread is not None:
+        page.thread.wait(60000)
     w.close()
+    w.deleteLater()
+    app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    app.processEvents()
+    del w
+    gc.collect()
 
 
 def run_calc(app, w):
@@ -99,3 +109,15 @@ def test_theme_switch(app, window):
     assert "#eef0f3" in app.styleSheet()
     window.apply_theme("dark")
     assert "#1b1e23" in app.styleSheet()
+
+
+def test_qt_binding_keeps_none_refcount(app):
+    """Регрессия: PySide6 6.12.0 на Python 3.11 портил счётчик ссылок None в каждом
+    вызове void-метода, и программа падала («deallocating None»)."""
+    import sys
+    label = QtWidgets.QLabel()
+    label.setText("x")
+    before = sys.getrefcount(None)
+    for _ in range(1000):
+        label.setText("x")
+    assert sys.getrefcount(None) - before > -100
