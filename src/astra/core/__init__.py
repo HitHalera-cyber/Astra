@@ -15,12 +15,12 @@ from .errors import AstraError, CoreError, InputError
 from .notation import CHEMICAL_MODELS, NOZZLE_REGIMES, QUANTITIES, WAVE_PROBLEMS, Quantity, q
 from .propellant import FUEL, MIXTURE, OXIDIZER, Component, ProductOptions, Propellant, Ratio
 from .results import EquilibriumResult, NozzleResult, StatePoint, WaveResult
-from .session import BAR, CeaSession, classify_regime, core_version
+from .session import BAR, CeaSession, classify_regime, core_version, isp_at_ambient
 from . import grid
 
 __all__ = [
     "AstraError", "BAR", "CHEMICAL_MODELS", "CeaSession", "Component", "CoreError", "EquilibriumResult",
     "FUEL", "InputError", "MIXTURE", "NOZZLE_REGIMES", "NozzleResult", "OXIDIZER", "ProductOptions", "Propellant",
     "QUANTITIES", "Quantity", "Ratio", "StatePoint", "Task", "WAVE_PROBLEMS", "WaveResult", "TaskFailure", "classify_regime",
-    "core_version", "grid", "q", "run_batch",
+    "core_version", "grid", "isp_at_ambient", "q", "run_batch",
 ]

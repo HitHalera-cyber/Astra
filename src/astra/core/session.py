@@ -443,7 +443,7 @@ class CeaSession:
                 })
             regime = None
             if nozzle_section and pn is not None:
-                isp_amb = ivac[j] - pn * ae[j] * cstar[j] / pk
+                isp_amb = isp_at_ambient(ivac[j], ae[j], cstar[j], pk, pn)
                 vals["pn"] = pn
                 vals["isp_amb"] = isp_amb
                 vals["kt_n"] = isp_amb / cstar[j]
@@ -673,6 +673,12 @@ class CeaSession:
         inputs = {"problem": "detonation", "Km": km, "alpha": self.alpha(km), "t1": t_l, "p1": p_l,
                   "frozen": bool(frozen), "propellant": self.propellant, "products": self.products}
         return WaveResult("detonation", inputs, converged, code, message, points, assumptions, warns, cases)
+
+
+def isp_at_ambient(isp_vac: float, eps: float, c_star: float, pk: float, pn: float) -> float:
+    """Удельный импульс при давлении окружающей среды Pн — точное соотношение по величинам ядра:
+    Iуд(Pн) = Iуд.п − Pн·ε·C*/Pк (безотрывное течение)."""
+    return isp_vac - pn * eps * c_star / pk
 
 
 def classify_regime(pa: float, pn: float, rel_tol: float = 1e-3) -> str:
