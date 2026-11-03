@@ -7,14 +7,16 @@ from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow,
                                QStackedWidget, QVBoxLayout, QWidget)
 
-from .pages.basic import HomePage, PlannedPage, SettingsPage
+from .pages.basic import HomePage, SettingsPage
 from .pages.conditions import ConditionsPage
 from .pages.database import DatabasePage
 from .pages.isp import IspPage
 from .pages.nozzle import NozzlePage
 from .pages.parametric import ParametricPage
+from .pages.plots import PlotsPage
 from .pages.projects import ProjectsPage
 from .pages.propellant import PropellantPage
+from .pages.tables import TablesPage
 from .pages.thermo import ThermoPage
 from .state import AppState
 from .theme import stylesheet
@@ -67,6 +69,7 @@ class MainWindow(QMainWindow):
 
         self.pages: dict[str, QWidget] = {}
         propellant = PropellantPage(state)
+        plots = PlotsPage(state)
         built = {
             "home": HomePage(state, self.go_to),
             "propellant": propellant,
@@ -75,10 +78,8 @@ class MainWindow(QMainWindow):
             "parametric": ParametricPage(state),
             "nozzle": NozzlePage(state),
             "isp": IspPage(state),
-            "plots": PlannedPage("Графики", 7, "Интерактивные графики, цветовые карты и поверхности по расчётным "
-                                               "данным, экспорт изображений."),
-            "tables": PlannedPage("Таблицы результатов", 7, "Сводные таблицы с сортировкой, фильтрацией, поиском и "
-                                                            "экспортом в XLSX и CSV."),
+            "plots": plots,
+            "tables": TablesPage(state, plots.plot_image),
             "database": DatabasePage(state, propellant),
             "projects": ProjectsPage(state),
             "settings": SettingsPage(state, self.apply_theme),
@@ -124,6 +125,8 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app is not None:
             app.setStyleSheet(stylesheet(name))
+        if "plots" in getattr(self, "pages", {}):
+            self.pages["plots"].apply_theme(name)
 
     def _title(self) -> None:
         p = self.state.project
