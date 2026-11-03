@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-from .notation import CHEMICAL_MODELS, NOZZLE_REGIMES, POINT_KINDS
+from .notation import CHEMICAL_MODELS, NOZZLE_REGIMES, POINT_KINDS, WAVE_PROBLEMS
 
 
 @dataclass
@@ -25,7 +25,10 @@ class StatePoint:
     mole_fractions: dict[str, float] = field(default_factory=dict)
     mass_fractions: dict[str, float] = field(default_factory=dict)
     regime: str | None = None                # ключ из NOZZLE_REGIMES (только при заданном Pн)
-    target: float | None = None              # заданное значение сечения (ε или Pк/P), как в исходных данных
+    target: float | None = None              # заданное значение сечения (ε или Pк/P), W₁/M₁ или P₁
+    case: int | None = None                  # номер варианта в серии (ударная волна, детонация)
+    t_target: float | None = None            # заданная T₁ варианта (детонация)
+    target_key: str | None = None            # какая величина задана в target: "u1" или "mach1" (ударная волна)
 
     @property
     def kind_name(self) -> str:
@@ -103,3 +106,30 @@ class NozzleResult:
     def column(self, key: str, kinds: tuple[str, ...] | None = None) -> np.ndarray:
         pts = self.points if kinds is None else [p for p in self.points if p.kind in kinds]
         return np.array([p[key] for p in pts], dtype=float)
+
+
+@dataclass
+class WaveResult:
+    """Результат расчёта ударной волны или детонации.
+
+    problem — "shock" или "detonation". Для серии начальных условий (несколько
+    W₁ или M₁) точки идут группами: для каждого варианта — состояние перед волной
+    и за ней; StatePoint.target — заданное значение (W₁, M₁ или P₁), case — номер варианта.
+    """
+
+    problem: str
+    inputs: dict[str, Any]
+    converged: bool
+    error_code: int
+    message: str
+    points: list[StatePoint]
+    assumptions: list[str]
+    warnings: list[str] = field(default_factory=list)
+    cases: list[dict[str, Any]] = field(default_factory=list)   # по варианту: converged, error_code, message
+
+    @property
+    def problem_name(self) -> str:
+        return WAVE_PROBLEMS[self.problem]
+
+    def of_kind(self, kind: str) -> list[StatePoint]:
+        return [p for p in self.points if p.kind == kind]

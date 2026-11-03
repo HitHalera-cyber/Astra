@@ -40,10 +40,13 @@ class DatabasePage(Page):
         btns = QHBoxLayout()
         self.as_fuel = QPushButton("Добавить как горючее")
         self.as_ox = QPushButton("Добавить как окислитель")
+        self.as_mix = QPushButton("Добавить как компонент смеси")
         self.as_fuel.clicked.connect(lambda: self._add("fuel"))
         self.as_ox.clicked.connect(lambda: self._add("oxidizer"))
+        self.as_mix.clicked.connect(lambda: self._add("mixture"))
         btns.addWidget(self.as_fuel)
         btns.addWidget(self.as_ox)
+        btns.addWidget(self.as_mix)
         btns.addStretch(1)
         lay.addLayout(btns)
         self.body.addWidget(frame)
@@ -60,8 +63,8 @@ class DatabasePage(Page):
                      "исходное вещество" if s.reactant_only else "продукт и исходное"]
             for c, text in enumerate(cells):
                 self.table.setItem(r, c, ro_item(text, c in (3, 4)))
-        self.as_fuel.setEnabled(False)
-        self.as_ox.setEnabled(False)
+        for b in (self.as_fuel, self.as_ox, self.as_mix):
+            b.setEnabled(False)
 
     def current(self) -> species_db.Species | None:
         r = self.table.currentRow()
@@ -70,8 +73,8 @@ class DatabasePage(Page):
 
     def show_details(self) -> None:
         s = self.current()
-        self.as_fuel.setEnabled(s is not None)
-        self.as_ox.setEnabled(s is not None)
+        for b in (self.as_fuel, self.as_ox, self.as_mix):
+            b.setEnabled(s is not None)
         if s is None:
             return
         if s.t_assigned is not None:

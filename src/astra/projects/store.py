@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from astra.core.results import EquilibriumResult, NozzleResult, StatePoint
+from astra.core.results import EquilibriumResult, NozzleResult, StatePoint, WaveResult
 
 from .model import CalcRecord, Project
 
@@ -57,10 +57,14 @@ def _clean(v: Any) -> Any:
 def point_to_dict(p: StatePoint) -> dict[str, Any]:
     return {"kind": p.kind, "values": p.values, "mole_fractions": p.mole_fractions,
             "mass_fractions": p.mass_fractions, "regime": p.regime,
-            "target": p.target}
+            "target": p.target, "case": p.case, "t_target": p.t_target,
+            "target_key": p.target_key}
 
 
-def result_to_dict(r: EquilibriumResult | NozzleResult) -> dict[str, Any]:
+def result_to_dict(r: EquilibriumResult | NozzleResult | WaveResult) -> dict[str, Any]:
+    if isinstance(r, WaveResult):
+        return {"type": r.problem, "points": [point_to_dict(p) for p in r.points], "cases": r.cases,
+                "assumptions": r.assumptions, "warnings": r.warnings}
     if isinstance(r, NozzleResult):
         return {"type": "nozzle", "model": r.model, "points": [point_to_dict(p) for p in r.points],
                 "assumptions": r.assumptions, "warnings": r.warnings}

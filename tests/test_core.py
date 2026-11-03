@@ -207,3 +207,92 @@ def test_notation_catalog_complete_and_uses_k():
     assert QUANTITIES["Km"].symbol != QUANTITIES["alpha"].symbol
     assert QUANTITIES["i"].name != QUANTITIES["H"].name
     assert QUANTITIES["pk"].to_display(5e6) == pytest.approx(5.0)   # МПа
+
+
+# ---------------------------------------------------------------- этап 4: все постановки
+from astra.core import MIXTURE, ProductOptions, WaveResult  # noqa: E402
+
+
+def _ar_mix():
+    return Propellant((Component("H2", MIXTURE, 0.05, 300.0), Component("O2", MIXTURE, 0.05, 300.0),
+                       Component("Ar", MIXTURE, 0.90, 300.0)), basis="mole")
+
+
+def test_mixture_role_rules():
+    with pytest.raises(InputError, match="нельзя сочетать"):
+        Propellant((Component("H2", MIXTURE), Component("O2", OXIDIZER)))
+    s = CeaSession(_ar_mix())
+    assert s.is_mixture and math.isnan(s.km0)
+    r = s.equilibrium("TP", None, p=1e5, t=2000.0)
+    assert r.converged and "Km" not in r.point.values
+    # массовые доли смеси передаются ядру как есть (сумма нормируется)
+    w = s.weights(math.nan)
+    assert w.sum() == pytest.approx(1.0)
+
+
+def test_sp_requires_entropy(sess):
+    s = sess
+    with pytest.raises(InputError, match="энтропию S"):
+        s.equilibrium("SP", Ratio.km(6.0), p=1e6)
+
+
+def test_explicit_state_is_used_and_default_is_reported(sess):
+    s = sess
+    default = s.equilibrium("HP", Ratio.km(6.0), p=5e6)
+    assert default.inputs["state_from_reactants"]
+    given = s.equilibrium("HP", Ratio.km(6.0), p=5e6, i=default.inputs["i"] - 1e6)
+    assert given.converged and given["t"] < default["t"]
+    assert given["i"] == pytest.approx(default.inputs["i"] - 1e6, rel=1e-6)
+
+
+def test_shock_argument_checks(sess):
+    s = CeaSession(_ar_mix())
+    with pytest.raises(InputError, match="либо скорость"):
+        s.shock(None, 300.0, 1e4)
+    with pytest.raises(InputError, match="либо скорость"):
+        s.shock(None, 300.0, 1e4, u1=[1000.0], mach1=[3.0])
+    with pytest.raises(InputError, match="газообразными"):
+        sess.shock(Ratio.km(6.0), 300.0, 1e5, u1=[2000.0])
+
+
+def test_shock_by_mach_equals_by_velocity():
+    s = CeaSession(_ar_mix())
+    by_u = s.shock(None, 300.0, 1333.2, u1=[1200.0])
+    a1 = by_u.of_kind("shock_initial")[0]["a"]
+    by_m = s.shock(None, 300.0, 1333.2, mach1=[1200.0 / a1])
+    assert by_m.converged
+    assert by_m.of_kind("shock_incident")[0]["t"] == pytest.approx(by_u.of_kind("shock_incident")[0]["t"], rel=1e-6)
+
+
+def test_subsonic_shock_is_reported_not_hidden():
+    r = CeaSession(_ar_mix()).shock(None, 300.0, 1333.2, u1=[300.0, 1100.0])
+    assert isinstance(r, WaveResult) and not r.converged
+    assert [c["converged"] for c in r.cases] == [False, True]
+    assert math.isnan(r.of_kind("shock_incident")[0]["t"])
+    assert r.of_kind("shock_incident")[1]["t"] > 1000
+    assert any("не сверхзвуковая" in w for w in r.warnings)
+
+
+def test_shock_weights_normalisation_does_not_change_result():
+    """Масса смеси в любой нормировке (мольные или массовые доли) даёт один и тот же скачок."""
+    a = CeaSession(_ar_mix()).shock(None, 300.0, 1333.2, u1=[1200.0])
+    names = [c.name for c in _ar_mix().components]
+    mw = {"H2": 2.01588, "O2": 31.9988, "Ar": 39.948}
+    mass = [0.05 * mw["H2"], 0.05 * mw["O2"], 0.90 * mw["Ar"]]
+    prop = Propellant(tuple(Component(n, MIXTURE, m * 1000, 300.0) for n, m in zip(names, mass)))
+    b = CeaSession(prop).shock(None, 300.0, 1333.2, u1=[1200.0])
+    assert b.of_kind("shock_incident")[0]["t"] == pytest.approx(a.of_kind("shock_incident")[0]["t"], rel=1e-5)
+
+
+def test_transport_only_on_request(sess, h2o2):
+    r = sess.equilibrium("TP", Ratio.km(6.0), p=1e6, t=3000.0)
+    assert "eta" not in r.point.values
+    r = CeaSession(h2o2, ProductOptions(transport=True)).equilibrium("TP", Ratio.km(6.0), p=1e6, t=3000.0)
+    assert 0 < r["eta"] < 1e-3 and 0 < r["pr"] < 2
+
+
+def test_product_options_validation():
+    with pytest.raises(InputError):
+        ProductOptions(only=("H2O",), omit=("OH",))
+    with pytest.raises(InputError):
+        ProductOptions(trace=2.0)

@@ -11,7 +11,7 @@ from astra.projects import ComponentSpec
 
 from ..widgets import Page, card, fmt, make_table, parse_number, ro_item
 
-ROLES = [("fuel", "Горючее"), ("oxidizer", "Окислитель")]
+ROLES = [("fuel", "Горючее"), ("oxidizer", "Окислитель"), ("mixture", "Компонент смеси")]
 
 
 class SpeciesDialog(QDialog):
@@ -63,7 +63,9 @@ def default_t0(sp: species_db.Species) -> float:
 class PropellantPage(Page):
     title = "Топливо и окислитель"
     hint = ("Компоненты выбираются из базы NASA CEA. Доли задаются внутри горючего и внутри окислителя "
-            "(нормируются ядром); соотношение между ними — в разделе «Исходные условия».")
+            "(нормируются ядром); соотношение между ними — в разделе «Исходные условия». "
+            "Для газовой смеси (например, для ударной волны) все компоненты задаются как «компонент смеси» "
+            "с долями в смеси — тогда Kм и α не используются.")
 
     COLS = ["Вещество", "Роль", "Доля", "T₀, К", "Формула", "Фаза"]
 
@@ -83,11 +85,13 @@ class PropellantPage(Page):
         row.addStretch(1)
         self.add_fuel = QPushButton("Добавить горючее…")
         self.add_ox = QPushButton("Добавить окислитель…")
+        self.add_mix = QPushButton("Добавить компонент смеси…")
         self.remove = QPushButton("Удалить выбранный")
         self.add_fuel.clicked.connect(lambda: self.add_dialog("fuel"))
         self.add_ox.clicked.connect(lambda: self.add_dialog("oxidizer"))
+        self.add_mix.clicked.connect(lambda: self.add_dialog("mixture"))
         self.remove.clicked.connect(self.remove_selected)
-        for b in (self.add_fuel, self.add_ox, self.remove):
+        for b in (self.add_fuel, self.add_ox, self.add_mix, self.remove):
             row.addWidget(b)
         lay.addLayout(row)
         self.table = make_table(self.COLS)
@@ -120,7 +124,7 @@ class PropellantPage(Page):
             role = QComboBox()
             for key, text in ROLES:
                 role.addItem(text, key)
-            role.setCurrentIndex(0 if c.role == "fuel" else 1)
+            role.setCurrentIndex(max(0, role.findData(c.role)))
             role.currentIndexChanged.connect(lambda _i, row=r, w=role: self._role_changed(row, w))
             self.table.setCellWidget(r, 1, role)
             self.table.setItem(r, 2, QTableWidgetItem(fmt(c.amount)))
@@ -138,9 +142,13 @@ class PropellantPage(Page):
             self.km0_label.setText(f"Стехиометрическое соотношение не определено: {exc}")
             self.km0_label.setObjectName("Warn")
         else:
-            self.km0_label.setText(
-                f"Kм⁰ = {fmt(sess.km0)} — стехиометрическое массовое соотношение компонентов "
-                "(φ = 1 по валентностям элементов в ядре NASA CEA). α = Kм / Kм⁰.")
+            if sess.is_mixture:
+                self.km0_label.setText("Состав задан смесью целиком: доли компонентов относятся ко всей смеси, "
+                                       "Kм⁰, Kм и α не определяются.")
+            else:
+                self.km0_label.setText(
+                    f"Kм⁰ = {fmt(sess.km0)} — стехиометрическое массовое соотношение компонентов "
+                    "(φ = 1 по валентностям элементов в ядре NASA CEA). α = Kм / Kм⁰.")
             self.km0_label.setObjectName("")
         self.km0_label.style().unpolish(self.km0_label)
         self.km0_label.style().polish(self.km0_label)
