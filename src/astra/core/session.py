@@ -12,8 +12,10 @@
 
 from __future__ import annotations
 
+import functools
 import math
 import re
+import threading
 import warnings
 from typing import Any, Iterable, Sequence
 
@@ -30,6 +32,19 @@ BAR = 1.0e5          # Па в 1 бар (единица давления ядр�
 R_UNIV = float(_cea.R)  # Дж/(кмоль·К), универсальная газовая постоянная ядра
 
 _PROBLEMS = {"TP", "HP", "SP", "TV", "UV", "SV"}
+
+
+# Ядро хранит базу и рабочие массивы в глобальном состоянии: вызовы из разных потоков
+# одного процесса (например, интерфейс и фоновый расчёт) выполняются по очереди.
+CORE_LOCK = threading.RLock()
+
+
+def _locked(method):
+    @functools.wraps(method)
+    def wrapper(*args, **kwargs):
+        with CORE_LOCK:
+            return method(*args, **kwargs)
+    return wrapper
 
 
 def core_version() -> str:
@@ -80,6 +95,7 @@ class CeaSession:
     используется `astra.core.batch` (отдельные процессы).
     """
 
+    @_locked
     def __init__(self, propellant: Propellant, products: ProductOptions | None = None):
         _ensure_init()
         self.propellant = propellant
@@ -140,10 +156,12 @@ class CeaSession:
     def alpha(self, km: float) -> float:
         return km / self.km0
 
+    @_locked
     def weights(self, km: float) -> np.ndarray:
         """Массы исходных веществ в порядке Propellant.components (ядро нормирует сумму)."""
         return np.asarray(self._reac.of_ratio_to_weights(self._oxid_w, self._fuel_w, float(km)), dtype=float)
 
+    @_locked
     def reactant_property(self, km: float, which: str) -> float:
         """Свойство исходных компонентов при их начальных температурах, СИ.
 
@@ -159,6 +177,7 @@ class CeaSession:
             self._eq_solver = _cea.EqSolver(self._prod, **self._solver_kw)
         return self._eq_solver
 
+    @_locked
     def equilibrium(self, problem: str, ratio: Ratio, *, p: float | None = None, v: float | None = None,
                     t: float | None = None, i: float | None = None, s: float | None = None,
                     u: float | None = None) -> EquilibriumResult:
@@ -234,6 +253,7 @@ class CeaSession:
             self._rocket_solver = _cea.RocketSolver(self._prod, **self._solver_kw)
         return self._rocket_solver
 
+    @_locked
     def nozzle(self, ratio: Ratio, pk: float, *,
                eps: Sequence[float] | float | None = None,
                pk_p: Sequence[float] | float | None = None,
@@ -322,6 +342,9 @@ class CeaSession:
         kinds += ["pressure_ratio"] * len(pkp_l) + ["subsonic"] * len(sub_l) + ["supersonic"] * len(eps_l)
         n = int(soln.num_pts)
         points = self._rocket_points(soln, n, kinds, km, pk, pn, mdot)
+        targets = [None] * (len(kinds) - len(pkp_l) - len(sub_l) - len(eps_l)) + pkp_l + sub_l + eps_l
+        for pt, tgt in zip(points, targets):
+            pt.target = tgt
 
         assumptions = [
             "Одномерное адиабатическое течение идеального газа без трения и теплообмена.",

@@ -11,13 +11,20 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "cea==3.3.4",
     "numpy>=1.26",
+    "PySide6>=6.6",
 ]
+
+[project.gui-scripts]
+astra = "astra.app.main:main"
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"astra.data" = ["thermo.inp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

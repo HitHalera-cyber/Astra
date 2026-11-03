@@ -25,6 +25,7 @@ class StatePoint:
     mole_fractions: dict[str, float] = field(default_factory=dict)
     mass_fractions: dict[str, float] = field(default_factory=dict)
     regime: str | None = None                # ключ из NOZZLE_REGIMES (только при заданном Pн)
+    target: float | None = None              # заданное значение сечения (ε или Pк/P), как в исходных данных
 
     @property
     def kind_name(self) -> str:
