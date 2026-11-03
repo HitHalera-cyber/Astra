@@ -93,6 +93,9 @@ def render(data: dict) -> str:
 
 
 def main() -> int:
+    # консоль Windows может быть в cp1252/cp866 — вывод на русском не должен ронять отчёт
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     data = run()
     text = render(data)
     path = ROOT / "docs" / "etap-8-verification.md"
