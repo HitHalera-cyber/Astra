@@ -71,11 +71,50 @@ class Conditions:
 
 
 @dataclass
+class AxisSpec:
+    """Ось параметрического исследования (значения в СИ).
+
+    key  — варьируемая величина: "Km", "alpha", "pk", "tk", "i" (камера и сопло)
+           или "Km", "alpha", "p", "t", "v", "i", "u", "s" (равновесие);
+    mode — "fixed" (одно значение start), "step" (от start до stop с шагом step)
+           или "count" (count точек от start до stop, log — логарифмически).
+    """
+
+    key: str = "alpha"
+    mode: str = "count"
+    start: float = 0.6
+    stop: float = 1.2
+    step: float = 0.1
+    count: int = 7
+    log: bool = False
+
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> "AxisSpec":
+        known = {f.name for f in fields(AxisSpec)}
+        return AxisSpec(**{k: v for k, v in d.items() if k in known})
+
+
+@dataclass
+class StudySpec:
+    """Параметрическое исследование: оси (все сочетания значений) и число процессов."""
+
+    axes: list[AxisSpec] = field(default_factory=lambda: [AxisSpec()])
+    workers: int | None = None     # None — по числу ядер ЦП − 1
+    section: int = -1              # точка результата для таблицы (индекс; −1 — последнее сечение)
+
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> "StudySpec":
+        return StudySpec(axes=[AxisSpec.from_dict(a) for a in d.get("axes", [])] or [AxisSpec()],
+                         workers=d.get("workers"), section=int(d.get("section", -1)))
+
+
+@dataclass
 class Project:
     name: str = "Новый проект"
     description: str = ""
     components: list[ComponentSpec] = field(default_factory=list)
     conditions: Conditions = field(default_factory=Conditions)
+    study: StudySpec = field(default_factory=StudySpec)
     id: int | None = None
     created: str = ""
     modified: str = ""
@@ -98,8 +137,9 @@ class Project:
     def from_dict(d: dict[str, Any]) -> "Project":
         comps = [ComponentSpec(**c) for c in d.get("components", [])]
         cond = Conditions.from_dict(d.get("conditions", {}))
+        study = StudySpec.from_dict(d.get("study", {}))
         return Project(name=d.get("name", "Проект"), description=d.get("description", ""),
-                       components=comps, conditions=cond)
+                       components=comps, conditions=cond, study=study)
 
     @staticmethod
     def example() -> "Project":

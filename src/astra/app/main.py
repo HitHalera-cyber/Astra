@@ -32,6 +32,8 @@ def create_window(store_path: Path | None = None) -> MainWindow:
 
 
 def main() -> int:
+    import multiprocessing
+    multiprocessing.freeze_support()
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("Astra")
     app.setOrganizationName("Astra")

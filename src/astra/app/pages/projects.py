@@ -74,8 +74,8 @@ class ProjectsPage(Page):
         recs = self.state.store.calculations(p.id) if p.id is not None else []
         self.log.setRowCount(len(recs))
         for r, rec in enumerate(recs):
-            kind = {"rocket": "Камера и сопло", "shock": "Ударная волна",
-                    "detonation": "Детонация"}.get(rec.kind, rec.kind)
+            kind = {"rocket": "Камера и сопло", "shock": "Ударная волна", "detonation": "Детонация",
+                    "study": "Параметрическое исследование"}.get(rec.kind, rec.kind)
             for c, text in enumerate([rec.timestamp.replace("T", " "), kind, "да" if rec.converged else "нет",
                                       rec.message, rec.core_version]):
                 self.log.setItem(r, c, ro_item(text))

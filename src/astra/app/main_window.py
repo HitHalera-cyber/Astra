@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QListWidget, Q
 from .pages.basic import HomePage, PlannedPage, SettingsPage
 from .pages.conditions import ConditionsPage
 from .pages.database import DatabasePage
+from .pages.parametric import ParametricPage
 from .pages.projects import ProjectsPage
 from .pages.propellant import PropellantPage
 from .pages.thermo import ThermoPage
@@ -69,10 +70,7 @@ class MainWindow(QMainWindow):
             "propellant": propellant,
             "conditions": ConditionsPage(state),
             "thermo": ThermoPage(state),
-            "parametric": PlannedPage("Параметрические исследования", 5,
-                                      "Диапазоны Kм, α, Pк, Tк и энтальпии (фиксированное значение, шаг или число "
-                                      "точек, логарифмическая шкала), многомерные массивы расчётных точек. "
-                                      "Расчётные сетки и пакетный запуск уже есть в ядре Astra (этап 2)."),
+            "parametric": ParametricPage(state),
             "nozzle": PlannedPage("Исследование сопла", 6,
                                   "Фиксация состояния камеры, диапазон ε, сравнение равновесного и замороженного "
                                   "расширения, режимы истечения, сравнение вариантов геометрии."),

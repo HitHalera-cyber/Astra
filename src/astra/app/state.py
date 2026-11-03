@@ -11,7 +11,8 @@ class AppState(QObject):
     project_changed = Signal()       # открыт или создан другой проект
     data_changed = Signal()          # изменены исходные данные текущего проекта
     saved = Signal()
-    result_ready = Signal(object)    # EquilibriumResult | NozzleResult
+    result_ready = Signal(object)    # EquilibriumResult | NozzleResult | WaveResult
+    study_ready = Signal(object)     # StudyResult параметрического исследования
     message = Signal(str)            # сообщение для строки состояния
 
     def __init__(self, store: ProjectStore, autosave: bool = True, autosave_ms: int = 3000):
@@ -19,6 +20,7 @@ class AppState(QObject):
         self.store = store
         self.project = Project.example()
         self.last_result = None
+        self.last_study = None
         self.dirty = False
         self.autosave = autosave
         self._timer = QTimer(self)
@@ -41,6 +43,7 @@ class AppState(QObject):
     def set_project(self, project: Project) -> None:
         self.project = project
         self.last_result = None
+        self.last_study = None
         self.dirty = project.id is None
         self.project_changed.emit()
 
