@@ -109,12 +109,53 @@ class StudySpec:
 
 
 @dataclass
+class NozzleStudySpec:
+    eps_mode: str = "count"        # "step" | "count" | "list"
+    eps_start: float = 2.0
+    eps_stop: float = 200.0
+    eps_step: float = 10.0
+    eps_count: int = 30
+    eps_log: bool = True
+    eps_list: list[float] = field(default_factory=list)
+    models: list[str] = field(default_factory=lambda: ["equilibrium", "frozen"])
+    freeze_at: str = "throat"
+    pn: list[float] = field(default_factory=lambda: [0.0, 101325.0])   # Па; 0 — вакуум
+
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> "NozzleStudySpec":
+        known = {f.name for f in fields(NozzleStudySpec)}
+        return NozzleStudySpec(**{k: v for k, v in d.items() if k in known})
+
+
+@dataclass
+class IspStudySpec:
+    ratio_kind: str = "alpha"      # "Km" | "alpha"
+    mode: str = "count"            # "step" | "count"
+    start: float = 0.5
+    stop: float = 1.2
+    step: float = 0.05
+    count: int = 15
+    eps: list[float] = field(default_factory=lambda: [25.0, 50.0, 100.0])
+    pn: list[float] = field(default_factory=lambda: [0.0])
+    models: list[str] = field(default_factory=lambda: ["equilibrium"])
+    freeze_at: str = "throat"
+    find_max: bool = True
+
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> "IspStudySpec":
+        known = {f.name for f in fields(IspStudySpec)}
+        return IspStudySpec(**{k: v for k, v in d.items() if k in known})
+
+
+@dataclass
 class Project:
     name: str = "Новый проект"
     description: str = ""
     components: list[ComponentSpec] = field(default_factory=list)
     conditions: Conditions = field(default_factory=Conditions)
     study: StudySpec = field(default_factory=StudySpec)
+    nozzle_study: NozzleStudySpec = field(default_factory=NozzleStudySpec)
+    isp_study: IspStudySpec = field(default_factory=IspStudySpec)
     id: int | None = None
     created: str = ""
     modified: str = ""
@@ -139,7 +180,9 @@ class Project:
         cond = Conditions.from_dict(d.get("conditions", {}))
         study = StudySpec.from_dict(d.get("study", {}))
         return Project(name=d.get("name", "Проект"), description=d.get("description", ""),
-                       components=comps, conditions=cond, study=study)
+                       components=comps, conditions=cond, study=study,
+                       nozzle_study=NozzleStudySpec.from_dict(d.get("nozzle_study", {})),
+                       isp_study=IspStudySpec.from_dict(d.get("isp_study", {})))
 
     @staticmethod
     def example() -> "Project":

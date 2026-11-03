@@ -53,3 +53,29 @@ class StudyThread(QThread):
             self.failed.emit(str(exc))
         except Exception as exc:
             self.failed.emit(f"Непредвиденная ошибка: {exc!r}")
+
+
+class JobThread(QThread):
+    """Произвольное исследование проекта: job(project, progress, cancelled) → результат."""
+
+    progress = Signal(int, int)
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, project: Project, job, parent=None):
+        super().__init__(parent)
+        self.project = copy.deepcopy(project)
+        self.job = job
+        self._cancel = False
+
+    def cancel(self) -> None:
+        self._cancel = True
+
+    def run(self) -> None:
+        try:
+            res = self.job(self.project, lambda d, t: self.progress.emit(d, t), lambda: self._cancel)
+            self.succeeded.emit(res)
+        except AstraError as exc:
+            self.failed.emit(str(exc))
+        except Exception as exc:
+            self.failed.emit(f"Непредвиденная ошибка: {exc!r}")

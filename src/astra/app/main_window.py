@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QListWidget, Q
 from .pages.basic import HomePage, PlannedPage, SettingsPage
 from .pages.conditions import ConditionsPage
 from .pages.database import DatabasePage
+from .pages.isp import IspPage
+from .pages.nozzle import NozzlePage
 from .pages.parametric import ParametricPage
 from .pages.projects import ProjectsPage
 from .pages.propellant import PropellantPage
@@ -71,11 +73,8 @@ class MainWindow(QMainWindow):
             "conditions": ConditionsPage(state),
             "thermo": ThermoPage(state),
             "parametric": ParametricPage(state),
-            "nozzle": PlannedPage("Исследование сопла", 6,
-                                  "Фиксация состояния камеры, диапазон ε, сравнение равновесного и замороженного "
-                                  "расширения, режимы истечения, сравнение вариантов геометрии."),
-            "isp": PlannedPage("Удельный импульс", 6,
-                               "Зависимости Iуд от Kм или α при разных ε, Pн и моделях течения; поиск максимума Iуд."),
+            "nozzle": NozzlePage(state),
+            "isp": IspPage(state),
             "plots": PlannedPage("Графики", 7, "Интерактивные графики, цветовые карты и поверхности по расчётным "
                                                "данным, экспорт изображений."),
             "tables": PlannedPage("Таблицы результатов", 7, "Сводные таблицы с сортировкой, фильтрацией, поиском и "
