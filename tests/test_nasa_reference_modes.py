@@ -42,7 +42,7 @@ def compare_columns(rows: dict[str, list[float]], points, table: dict, rel=REL, 
         assert len(vals) == len(points), label
         for col, (pt, expected) in enumerate(zip(points, vals)):
             got = pt[key] * scale
-            assert close(got, expected, rel=rel, abs_=abs_), f"{label}, столбец {col}: {got} != {expected}"
+            assert close(got, expected, rel=rel, abs_=abs_, what=label), f"{label}, столбец {col}: {got} != {expected}"
             checked += 1
     return checked
 
@@ -56,7 +56,7 @@ def compare_transport(block, points, frozen=True) -> int:
             vals = rows[label]
             for col, (pt, expected) in enumerate(zip(points, vals)):
                 got = pt[key] * scale
-                assert close(got, expected, rel=REL), f"{label} ({section}), столбец {col}: {got} != {expected}"
+                assert close(got, expected, rel=REL, what=label + (f" ({section.lower()})" if section else "")), f"{label} ({section}), столбец {col}: {got} != {expected}"
                 checked += 1
     return checked
 
