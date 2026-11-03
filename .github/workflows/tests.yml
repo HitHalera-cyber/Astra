@@ -27,3 +27,12 @@ jobs:
         run: python -m pip install -e ".[test]"
       - name: Автотесты
         run: python -m pytest -v
+      - name: Отчёт о сверке с эталонами NASA CEA
+        if: always()
+        run: python tools/verify_nasa.py
+      - name: Сохранение отчёта
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-${{ matrix.os }}-py${{ matrix.python }}
+          path: docs/etap-8-verification.md

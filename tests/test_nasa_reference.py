@@ -8,6 +8,7 @@ Astra вызывает ядро через свой адаптер (единиц
 """
 
 import math
+import os
 
 import pytest
 
@@ -39,7 +40,25 @@ PERF_ROWS = {
 }
 
 
-def close(a, b, rel=REL, abs_=1e-9):
+# Наибольшие расхождения с эталонами по задачам и величинам — для отчёта о проверке
+# (tools/verify_nasa.py; при обычном запуске тестов только накапливаются в памяти).
+DEVIATIONS: dict[tuple[str, str], dict[str, float]] = {}
+
+
+def _record(what: str, a: float, b: float, rel: float, abs_: float) -> None:
+    test = os.environ.get("PYTEST_CURRENT_TEST", "?").split(" ")[0].split("::")[-1]
+    d = DEVIATIONS.setdefault((test, what), {"max_rel": 0.0, "count": 0, "near_zero": 0, "tol": rel})
+    d["count"] += 1
+    d["tol"] = max(d["tol"], rel)
+    if abs(b) <= 100 * abs_:          # значения около нуля (M в камере и т. п.) сравниваются по абсолютному допуску
+        d["near_zero"] += 1
+        return
+    d["max_rel"] = max(d["max_rel"], abs(a - b) / abs(b))
+
+
+def close(a, b, rel=REL, abs_=1e-9, what: str | None = None):
+    if what is not None:
+        _record(what, a, b, rel, abs_)
     return math.isclose(a, b, rel_tol=rel, abs_tol=abs_)
 
 
@@ -50,18 +69,18 @@ def compare_block(block, points, match=("P, BAR", "p", 1 / BAR)):
     for col in range(block.ncols):
         ref_m = block.value(label_m, col)
         pt = min(points, key=lambda x: abs(x[key_m] * scale_m - ref_m))
-        assert close(pt[key_m] * scale_m, ref_m), f"нет точки Astra с {label_m} = {ref_m}"
+        assert close(pt[key_m] * scale_m, ref_m, what=label_m), f"нет точки Astra с {label_m} = {ref_m}"
         for label, (key, scale) in STATE_ROWS.items():
             if label in block.rows:
                 expected = block.value(label, col)
-                assert close(pt[key] * scale, expected, abs_=1e-6), f"{label} в столбце {col}: {pt[key] * scale} != {expected}"
+                assert close(pt[key] * scale, expected, abs_=1e-6, what=label), f"{label} в столбце {col}: {pt[key] * scale} != {expected}"
                 checked += 1
         if col == 0 or pt.kind in ("injector", "chamber_inf", "chamber_end"):
             continue  # характеристики сопла сравниваются начиная с критического сечения
         for label, (key, scale) in PERF_ROWS.items():
             if label in block.rows:
                 expected = block.value(label, col)
-                assert close(pt[key] * scale, expected), f"{label} в столбце {col}: {pt[key] * scale} != {expected}"
+                assert close(pt[key] * scale, expected, what=label), f"{label} в столбце {col}: {pt[key] * scale} != {expected}"
                 checked += 1
     return checked
 

@@ -148,7 +148,7 @@ class PropellantPage(Page):
             else:
                 self.km0_label.setText(
                     f"Kм⁰ = {fmt(sess.km0)} — стехиометрическое массовое соотношение компонентов "
-                    "(φ = 1 по валентностям элементов в ядре NASA CEA). α = Kм / Kм⁰.")
+                    "(α = 1, по валентностям элементов в ядре NASA CEA). α = Kм / Kм⁰.")
             self.km0_label.setObjectName("")
         self.km0_label.style().unpolish(self.km0_label)
         self.km0_label.style().polish(self.km0_label)
