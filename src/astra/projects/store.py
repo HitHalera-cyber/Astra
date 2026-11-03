@@ -62,6 +62,8 @@ def point_to_dict(p: StatePoint) -> dict[str, Any]:
 
 
 def result_to_dict(r: EquilibriumResult | NozzleResult | WaveResult) -> dict[str, Any]:
+    if hasattr(r, "to_dict"):   # сводка серии параметрического исследования
+        return r.to_dict()
     if isinstance(r, WaveResult):
         return {"type": r.problem, "points": [point_to_dict(p) for p in r.points], "cases": r.cases,
                 "assumptions": r.assumptions, "warnings": r.warnings}

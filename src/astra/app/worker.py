@@ -26,3 +26,30 @@ class CalcThread(QThread):
             self.failed.emit(str(exc))
         except Exception as exc:  # ошибка, не предусмотренная адаптером, показывается как есть
             self.failed.emit(f"Непредвиденная ошибка: {exc!r}")
+
+
+class StudyThread(QThread):
+    """Серия расчётов параметрического исследования с прогрессом и отменой."""
+
+    progress = Signal(int, int)
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, project: Project, parent=None):
+        super().__init__(parent)
+        self.project = copy.deepcopy(project)
+        self._cancel = False
+
+    def cancel(self) -> None:
+        self._cancel = True
+
+    def run(self) -> None:
+        from astra.projects.study import run_study
+        try:
+            res = run_study(self.project, progress=lambda d, t: self.progress.emit(d, t),
+                            cancelled=lambda: self._cancel)
+            self.succeeded.emit(res)
+        except AstraError as exc:
+            self.failed.emit(str(exc))
+        except Exception as exc:
+            self.failed.emit(f"Непредвиденная ошибка: {exc!r}")

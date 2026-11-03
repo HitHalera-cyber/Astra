@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import dataclass, field
 import multiprocessing as mp
 import os
@@ -19,7 +19,7 @@ from typing import Any, Callable, Iterable, Sequence
 
 from .errors import AstraError
 from .propellant import ProductOptions, Propellant
-from .results import EquilibriumResult, NozzleResult
+from .results import EquilibriumResult, NozzleResult, WaveResult
 from .session import CeaSession
 
 
@@ -27,7 +27,7 @@ from .session import CeaSession
 class Task:
     """Одна независимая расчётная точка.
 
-    kind   — "equilibrium" (CeaSession.equilibrium) или "nozzle" (CeaSession.nozzle);
+    kind   — метод CeaSession: "equilibrium", "nozzle", "shock" или "detonation";
     args   — позиционные аргументы метода (например, ("HP", Ratio.km(6.0)));
     kwargs — именованные аргументы метода (например, {"p": 5e6}).
     """
@@ -48,7 +48,10 @@ class TaskFailure:
     message: str
 
 
-Result = EquilibriumResult | NozzleResult | TaskFailure
+Result = EquilibriumResult | NozzleResult | WaveResult | TaskFailure
+
+KINDS = ("equilibrium", "nozzle", "shock", "detonation")
+CANCELLED = "Расчёт точки отменён пользователем."
 
 _SESSIONS: dict[tuple, CeaSession] = {}
 
@@ -64,12 +67,10 @@ def _session(task: Task) -> CeaSession:
 
 def run_task(index: int, task: Task) -> Result:
     try:
+        if task.kind not in KINDS:
+            return TaskFailure(index, f"Неизвестный тип расчёта: {task.kind}.")
         sess = _session(task)
-        if task.kind == "equilibrium":
-            return sess.equilibrium(*task.args, **task.kwargs)
-        if task.kind == "nozzle":
-            return sess.nozzle(*task.args, **task.kwargs)
-        return TaskFailure(index, f"Неизвестный тип расчёта: {task.kind}.")
+        return getattr(sess, task.kind)(*task.args, **task.kwargs)
     except AstraError as exc:
         return TaskFailure(index, str(exc))
 
@@ -84,22 +85,26 @@ def default_workers() -> int:
 
 def run_batch(tasks: Sequence[Task], workers: int | None = None,
               progress: Callable[[int, int], None] | None = None,
-              chunk_size: int | None = None) -> list[Result]:
+              chunk_size: int | None = None,
+              cancelled: Callable[[], bool] | None = None) -> list[Result]:
     """Выполнить задачи и вернуть результаты в исходном порядке.
 
     workers=1 — последовательно в текущем процессе; None — по числу ядер ЦП − 1.
     progress(done, total) вызывается после каждого завершённого блока задач.
+    cancelled() проверяется между блоками; после отмены невыполненные точки
+    возвращаются как TaskFailure с сообщением об отмене.
     """
     tasks = list(tasks)
     total = len(tasks)
     if total == 0:
         return []
+    stop = cancelled or (lambda: False)
     workers = default_workers() if workers is None else max(1, int(workers))
     indexed = list(enumerate(tasks))
     if workers == 1 or total == 1:
         out: list[Result] = []
         for i, t in indexed:
-            out.append(run_task(i, t))
+            out.append(TaskFailure(i, CANCELLED) if stop() else run_task(i, t))
             if progress:
                 progress(i + 1, total)
         return out
@@ -110,10 +115,27 @@ def run_batch(tasks: Sequence[Task], workers: int | None = None,
     done = 0
     ctx = mp.get_context("spawn")  # одинаково на Windows и Linux
     with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as pool:
-        for chunk, res in zip(chunks, pool.map(_run_chunk, chunks)):
-            for (i, _), r in zip(chunk, res):
-                results[i] = r
-            done += len(chunk)
-            if progress:
-                progress(done, total)
+        pending = {pool.submit(_run_chunk, ch): ch for ch in chunks}
+        while pending:
+            finished, _ = wait(pending, timeout=0.2, return_when=FIRST_COMPLETED)
+            for fut in finished:
+                chunk = pending.pop(fut)
+                if fut.cancelled():
+                    res = [TaskFailure(i, CANCELLED) for i, _ in chunk]
+                else:
+                    res = fut.result()
+                for (i, _), r in zip(chunk, res):
+                    results[i] = r
+                done += len(chunk)
+                if progress:
+                    progress(done, total)
+            if stop():
+                for fut in list(pending):
+                    if fut.cancel():
+                        chunk = pending.pop(fut)
+                        for i, _ in chunk:
+                            results[i] = TaskFailure(i, CANCELLED)
+                        done += len(chunk)
+                if progress:
+                    progress(done, total)
     return results  # type: ignore[return-value]
