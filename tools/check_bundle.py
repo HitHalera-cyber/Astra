@@ -62,11 +62,15 @@ def check(root: Path) -> tuple[bool, list[str]]:
     for dep, users in sorted(missing.items()):
         lines.append(f"ОШИБКА  нет {dep}; нужна для: {', '.join(sorted(users)[:5])}"
                      + (f" и ещё {len(users) - 5}" if len(users) > 5 else ""))
+    if not files:
+        lines.append("ОШИБКА  в папке нет библиотек — сборка не найдена")
+        return False, lines
     lines.append("ПРОЙДЕНО" if not missing else f"Не хватает библиотек: {len(missing)}")
     return not missing, lines
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # консоль Windows — cp1252
     ok, lines = check(Path(sys.argv[1] if len(sys.argv) > 1 else "dist/Astra"))
     print("\n".join(lines))
     sys.exit(0 if ok else 1)
