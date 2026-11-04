@@ -27,8 +27,9 @@ from .notation import q
 from .propellant import FUEL, MIXTURE, OXIDIZER, ProductOptions, Propellant, Ratio
 from .results import EquilibriumResult, NozzleResult, StatePoint, WaveResult
 from . import species_db
+from .cea_loader import load as _load_cea
 
-import cea as _cea
+_cea = _load_cea()  # ядро NASA CEA; базы — по пути, который ядро может открыть
 
 BAR = 1.0e5          # Па в 1 бар (единица давления ядра)
 R_UNIV = float(_cea.R)  # Дж/(кмоль·К), универсальная газовая постоянная ядра
