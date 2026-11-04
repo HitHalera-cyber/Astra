@@ -1,12 +1,18 @@
 """Точка входа собранной программы (PyInstaller)."""
 
 import multiprocessing
+import os
 import sys
+
+# OpenBLAS (внутри NumPy) при загрузке выделяет буферы на каждый поток процессора; на
+# компьютерах с большим числом ядер и малым файлом подкачки это заканчивается ошибкой
+# «Произошел сбой в программе инициализации библиотеки DLL» (код 1114). Расчётам Astra
+# много потоков линейной алгебры не нужно; заданное пользователем значение сохраняется.
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "2")
 
 
 def _startup_report(exc: BaseException) -> str:
     """Подробности сбоя запуска: текст ошибки и состав папки программы."""
-    import os
     from pathlib import Path
     import platform
     import traceback
@@ -18,6 +24,7 @@ def _startup_report(exc: BaseException) -> str:
         f"Программа: {sys.executable}",
         f"Windows: {platform.platform()}, процессор: {platform.processor() or platform.machine()}",
         f"Python: {sys.version}",
+        f"Ядер процессора: {os.cpu_count()}, OPENBLAS_NUM_THREADS={os.environ.get('OPENBLAS_NUM_THREADS')}",
         "",
         "".join(traceback.format_exception(exc)),
         "Библиотеки Visual C++ в папке программы:",
@@ -33,7 +40,6 @@ def _startup_report(exc: BaseException) -> str:
 
 
 def _report_failure(exc: BaseException) -> None:
-    import os
     from pathlib import Path
 
     text = _startup_report(exc)
