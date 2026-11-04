@@ -81,6 +81,12 @@ def _call_core(func, *args, **kwargs) -> list[str]:
     return [str(w.message) for w in caught]
 
 
+def _custom_reactant(c):
+    """Собственное вещество для ядра: формула, энтальпия при T₀ (Дж/моль), молярная масса."""
+    return _cea.Reactant(name=c.name, formula=dict(c.formula), molecular_weight=c.mw,
+                         enthalpy=float(c.enthalpy), enthalpy_units="J/mol", temperature=float(c.t0))
+
+
 def _as_list(values: float | Iterable[float] | None) -> list[float]:
     if values is None:
         return []
@@ -103,18 +109,26 @@ class CeaSession:
         self.propellant = propellant
         self.products = products or ProductOptions()
         names = propellant.names
+        for c in propellant.components:
+            if c.is_custom and species_db.by_name(c.name) is not None:
+                raise InputError(f"Имя собственного вещества «{c.name}» совпадает с веществом базы NASA CEA. "
+                                 "Задайте другое имя.")
+        species = [_custom_reactant(c) if c.is_custom else c.name for c in propellant.components]
         try:
-            self._reac = _cea.Mixture(names, ions=self.products.ions)
+            self._reac = _cea.Mixture(species, ions=self.products.ions)
             if self.products.only:
                 self._prod = _cea.Mixture(list(self.products.only), ions=self.products.ions)
             else:
-                self._prod = _cea.Mixture(names, products_from_reactants=True,
+                self._prod = _cea.Mixture(species, products_from_reactants=True,
                                           omit=list(self.products.omit), ions=self.products.ions)
         except (RuntimeError, ValueError) as exc:
             m = re.search(r"not found in ThermoDB: (\S+)", str(exc))
             if m:
                 raise InputError(f"Вещество не найдено в базе NASA CEA: {m.group(1)}. "
                                  "Проверьте написание имени по базе веществ.") from exc
+            m = re.search(r"Symbol (\S+) not found in the element list", str(exc))
+            if m:
+                raise InputError(f"Элемента {m.group(1)} нет в списке элементов ядра NASA CEA.") from exc
             raise InputError(f"Не удалось сформировать смесь из веществ {', '.join(names)}: {exc}") from exc
 
         amounts = np.array([c.amount for c in propellant.components], dtype=float)
@@ -152,6 +166,8 @@ class CeaSession:
     # ------------------------------------------------------------------ состав
     def _check_temperature_ranges(self) -> None:
         for comp in self.propellant.components:
+            if comp.is_custom:
+                continue    # энтальпия собственного вещества задана при его T₀
             try:
                 lo, hi = _cea.Reactant(comp.name).get_valid_temperature_range()
             except (RuntimeError, ValueError):

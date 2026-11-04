@@ -74,8 +74,7 @@ def render(data: dict) -> str:
         f"Сравнений: {total}; наибольшее относительное расхождение {fmt(worst['max_rel'])} "
         f"({worst['quantity']}, {TITLES.get(worst['test'], worst['test'])}); допуск 5e-4.",
         "",
-        "Задача №5 (реагент с формулой, заданной пользователем) не проверяется: ввод собственных "
-        "реагентов в Astra пока не поддерживается.",
+        "Задача №5 (собственный реагент CHOS-Binder с формулой и энтальпией, заданными пользователем): эталонного вывода NASA в комплекте нет, поэтому расчёт Astra сверяется с образцом NASA `cea/samples/rp1311/example5.py` из пакета ядра (тест `tests/test_custom_reactant.py`): T, k, μ, Cp, S и мольные доли совпадают с относительной разницей не более 1e-6 (доли — 1e-4).",
         "",
     ]
     for test in sorted(by_test, key=lambda t: list(TITLES).index(t) if t in TITLES else 99):

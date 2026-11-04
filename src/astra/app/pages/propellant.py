@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QLineEdit,
-                               QPushButton, QTableWidgetItem, QVBoxLayout)
+from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel,
+                               QLineEdit, QPushButton, QTableWidgetItem, QVBoxLayout)
 
-from astra.core import CeaSession, InputError, species_db
+from astra.core import CeaSession, Component, InputError, Propellant, formula_text, parse_formula, species_db
 from astra.projects import ComponentSpec
 
 from ..widgets import Page, card, fmt, make_table, parse_number, ro_item
@@ -54,6 +54,104 @@ class SpeciesDialog(QDialog):
         return species_db.by_name(item.text()) if item else None
 
 
+class CustomReactantDialog(QDialog):
+    """Собственное вещество: формула и энтальпия задаются пользователем (как в задаче NASA RP-1311 №5)."""
+
+    def __init__(self, parent=None, spec: ComponentSpec | None = None, role: str = "fuel",
+                 taken: tuple[str, ...] = ()):
+        super().__init__(parent)
+        self.setWindowTitle("Собственное вещество")
+        self.resize(560, 0)
+        self.taken = taken
+        self.result_spec: ComponentSpec | None = None
+        lay = QVBoxLayout(self)
+        note = QLabel("Вещество, которого нет в базе NASA CEA, задаётся брутто-формулой и энтальпией при "
+                      "начальной температуре T₀ (при T₀ = 298,15 К — теплотой образования ΔHf°). Ядро NASA CEA "
+                      "использует его только как исходный компонент; в продуктах сгорания оно не учитывается.")
+        note.setWordWrap(True)
+        lay.addWidget(note)
+        form = QFormLayout()
+        self.name = QLineEdit(spec.name if spec else "")
+        self.name.setPlaceholderText("латиницей, до 15 символов, например CHOS-Binder")
+        self.role = QComboBox()
+        for key, text in ROLES:
+            self.role.addItem(text, key)
+        self.role.setCurrentIndex(max(0, self.role.findData(spec.role if spec else role)))
+        self.formula = QLineEdit(" ".join(f"{el} {fmt(n)}" for el, n in spec.formula.items()) if spec else "")
+        self.formula.setPlaceholderText("C 1 H 1,86955 O 0,031256 S 0,008415")
+        self.parsed = QLabel("")
+        self.parsed.setWordWrap(True)
+        self.enthalpy = QLineEdit(fmt(spec.enthalpy / 1000) if spec and spec.enthalpy is not None else "")
+        self.enthalpy.setPlaceholderText("кДж/моль, например −12,548")
+        self.t0 = QLineEdit(fmt(spec.t0) if spec else "298,15")
+        self.mw = QLineEdit(fmt(spec.mw) if spec and spec.mw is not None else "")
+        self.mw.setPlaceholderText("пусто — рассчитывается ядром по формуле")
+        self.amount = QLineEdit(fmt(spec.amount) if spec else "100")
+        form.addRow("Имя:", self.name)
+        form.addRow("Роль:", self.role)
+        form.addRow("Формула:", self.formula)
+        form.addRow("", self.parsed)
+        form.addRow("Энтальпия при T₀, кДж/моль:", self.enthalpy)
+        form.addRow("T₀, К:", self.t0)
+        form.addRow("μ, г/моль (необязательно):", self.mw)
+        form.addRow("Доля:", self.amount)
+        lay.addLayout(form)
+        self.error = QLabel("")
+        self.error.setObjectName("Warn")
+        self.error.setWordWrap(True)
+        lay.addWidget(self.error)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Сохранить" if spec else "Добавить")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Отмена")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        lay.addWidget(buttons)
+        self.formula.textChanged.connect(self._show_formula)
+        self._show_formula()
+
+    def _show_formula(self) -> None:
+        try:
+            f = parse_formula(self.formula.text())
+        except InputError as exc:
+            self.parsed.setText(str(exc) if self.formula.text().strip() else "Символ элемента и число атомов "
+                                "после него; дробные числа допускаются.")
+        else:
+            self.parsed.setText("Распознано: " + ", ".join(f"{el} — {fmt(n)}" for el, n in f))
+
+    def build(self) -> ComponentSpec:
+        """Проверенное описание вещества (InputError — с причиной)."""
+        name = self.name.text().strip()
+        if not name:
+            raise InputError("Не задано имя вещества.")
+        if species_db.by_name(name) is not None:
+            raise InputError(f"«{name}» — вещество базы NASA CEA. Выберите его через «Добавить…» "
+                             "или задайте другое имя.")
+        if name in self.taken:
+            raise InputError(f"«{name}» уже есть в составе топлива.")
+        formula = dict(parse_formula(self.formula.text()))
+        if not self.enthalpy.text().strip():
+            raise InputError("Не задана энтальпия вещества, кДж/моль.")
+        enthalpy = parse_number(self.enthalpy.text()) * 1000
+        t0 = parse_number(self.t0.text())
+        mw = parse_number(self.mw.text()) if self.mw.text().strip() else None
+        amount = parse_number(self.amount.text())
+        spec = ComponentSpec(name, self.role.currentData(), amount, t0, formula=formula, enthalpy=enthalpy, mw=mw)
+        comp = spec.to_core()            # проверка значений
+        # проверка ядром: формула и элементы должны приниматься NASA CEA
+        partner = Component("N2", "mixture" if comp.role == "mixture" else
+                            ("oxidizer" if comp.role == "fuel" else "fuel"))
+        CeaSession(Propellant((comp, partner)))
+        return spec
+
+    def accept(self) -> None:
+        try:
+            self.result_spec = self.build()
+        except InputError as exc:
+            self.error.setText(str(exc))
+            return
+        super().accept()
+
+
 def default_t0(sp: species_db.Species) -> float:
     if sp.t_assigned is not None:
         return sp.t_assigned
@@ -62,7 +160,8 @@ def default_t0(sp: species_db.Species) -> float:
 
 class PropellantPage(Page):
     title = "Топливо и окислитель"
-    hint = ("Компоненты выбираются из базы NASA CEA. Доли задаются внутри горючего и внутри окислителя "
+    hint = ("Компоненты выбираются из базы NASA CEA или задаются как собственные вещества (формула и "
+            "энтальпия). Двойной щелчок по имени собственного вещества открывает его описание. Доли задаются внутри горючего и внутри окислителя "
             "(нормируются ядром); соотношение между ними — в разделе «Исходные условия». "
             "Для газовой смеси (например, для ударной волны) все компоненты задаются как «компонент смеси» "
             "с долями в смеси — тогда Kм и α не используются.")
@@ -86,18 +185,22 @@ class PropellantPage(Page):
         self.add_fuel = QPushButton("Добавить горючее…")
         self.add_ox = QPushButton("Добавить окислитель…")
         self.add_mix = QPushButton("Добавить компонент смеси…")
+        self.add_custom = QPushButton("Собственное вещество…")
+        self.add_custom.setToolTip("Вещество, которого нет в базе NASA CEA: формула и энтальпия задаются вручную")
+        self.add_custom.clicked.connect(lambda: self.custom_dialog())
         self.remove = QPushButton("Удалить выбранный")
         self.add_fuel.clicked.connect(lambda: self.add_dialog("fuel"))
         self.add_ox.clicked.connect(lambda: self.add_dialog("oxidizer"))
         self.add_mix.clicked.connect(lambda: self.add_dialog("mixture"))
         self.remove.clicked.connect(self.remove_selected)
-        for b in (self.add_fuel, self.add_ox, self.add_mix, self.remove):
+        for b in (self.add_fuel, self.add_ox, self.add_mix, self.add_custom, self.remove):
             row.addWidget(b)
         lay.addLayout(row)
         self.table = make_table(self.COLS)
         self.table.setEditTriggers(self.table.EditTrigger.DoubleClicked | self.table.EditTrigger.EditKeyPressed
                                    | self.table.EditTrigger.AnyKeyPressed)
         self.table.itemChanged.connect(self._item_changed)
+        self.table.cellDoubleClicked.connect(self._cell_double_clicked)
         self.table.setMinimumHeight(220)
         lay.addWidget(self.table)
         self.body.addWidget(frame)
@@ -129,8 +232,12 @@ class PropellantPage(Page):
             self.table.setCellWidget(r, 1, role)
             self.table.setItem(r, 2, QTableWidgetItem(fmt(c.amount)))
             self.table.setItem(r, 3, QTableWidgetItem(fmt(c.t0)))
-            self.table.setItem(r, 4, ro_item(sp.formula_text if sp else "—"))
-            self.table.setItem(r, 5, ro_item(sp.phase_name if sp else "—"))
+            if c.is_custom:
+                self.table.setItem(r, 4, ro_item(formula_text(c.formula.items())))
+                self.table.setItem(r, 5, ro_item("собственное, ΔH = " + fmt(c.enthalpy / 1000) + " кДж/моль"))
+            else:
+                self.table.setItem(r, 4, ro_item(sp.formula_text if sp else "—"))
+                self.table.setItem(r, 5, ro_item(sp.phase_name if sp else "—"))
         self._loading = False
         self.update_stoich()
 
@@ -170,6 +277,28 @@ class PropellantPage(Page):
         self.state.project.components.append(ComponentSpec(name, role, 100.0, default_t0(sp)))
         self.state.touch()
         self.refresh()
+
+    def custom_dialog(self, row: int | None = None) -> None:
+        comps = self.state.project.components
+        spec = comps[row] if row is not None else None
+        taken = tuple(c.name for i, c in enumerate(comps) if i != row)
+        dlg = CustomReactantDialog(self, spec, taken=taken)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.result_spec is not None:
+            self.put_custom(dlg.result_spec, row)
+
+    def put_custom(self, spec: ComponentSpec, row: int | None = None) -> None:
+        """Добавить (row = None) или заменить собственное вещество."""
+        if row is None:
+            self.state.project.components.append(spec)
+        else:
+            self.state.project.components[row] = spec
+        self.state.touch()
+        self.refresh()
+
+    def _cell_double_clicked(self, row: int, col: int) -> None:
+        comps = self.state.project.components
+        if col in (0, 4, 5) and 0 <= row < len(comps) and comps[row].is_custom:
+            self.custom_dialog(row)
 
     def remove_selected(self) -> None:
         r = self.table.currentRow()

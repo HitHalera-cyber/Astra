@@ -14,9 +14,26 @@ class ComponentSpec:
     role: str            # "fuel" | "oxidizer" | "mixture"
     amount: float = 100.0
     t0: float = 298.15
+    # собственное вещество (не из базы NASA CEA): формула {элемент: число атомов},
+    # энтальпия при T₀, Дж/моль, и необязательная молярная масса, г/моль
+    formula: dict[str, float] = field(default_factory=dict)
+    enthalpy: float | None = None
+    mw: float | None = None
+
+    @property
+    def is_custom(self) -> bool:
+        return bool(self.formula)
 
     def to_core(self) -> Component:
-        return Component(self.name, self.role, float(self.amount), float(self.t0))
+        return Component(self.name, self.role, float(self.amount), float(self.t0),
+                         formula=tuple(self.formula.items()),
+                         enthalpy=None if self.enthalpy is None else float(self.enthalpy),
+                         mw=None if self.mw is None else float(self.mw))
+
+    @staticmethod
+    def from_dict(d: dict[str, Any]) -> "ComponentSpec":
+        known = {k: d[k] for k in ("name", "role", "amount", "t0", "enthalpy", "mw") if k in d}
+        return ComponentSpec(formula={str(k): float(v) for k, v in (d.get("formula") or {}).items()}, **known)
 
 
 @dataclass
@@ -176,7 +193,7 @@ class Project:
 
     @staticmethod
     def from_dict(d: dict[str, Any]) -> "Project":
-        comps = [ComponentSpec(**c) for c in d.get("components", [])]
+        comps = [ComponentSpec.from_dict(c) for c in d.get("components", [])]
         cond = Conditions.from_dict(d.get("conditions", {}))
         study = StudySpec.from_dict(d.get("study", {}))
         return Project(name=d.get("name", "Проект"), description=d.get("description", ""),
