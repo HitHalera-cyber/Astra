@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "astra"
-version = "0.1.0"
+version = "1.0.0"
 description = "Русскоязычный комплекс термодинамических расчётов на базе NASA CEA"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
@@ -24,7 +24,7 @@ dependencies = [
 astra = "astra.app.main:main"
 
 [project.optional-dependencies]
-test = ["pytest>=8"]
+test = ["pytest>=8", "markdown>=3.5"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
