@@ -31,10 +31,36 @@ def create_window(store_path: Path | None = None) -> MainWindow:
     return MainWindow(state)
 
 
-def main() -> int:
+def install_russian_qt(app) -> bool:
+    """Русские стандартные диалоги Qt (выбор файла, кнопки «Отмена», «Открыть»…)."""
+    from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
+    path = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    ok = False
+    for name in ("qtbase_ru", "qt_ru"):
+        tr = QTranslator(app)
+        if tr.load(name, path):
+            app.installTranslator(tr)
+            ok = True
+    QLocale.setDefault(QLocale(QLocale.Language.Russian, QLocale.Country.Russia))
+    return ok
+
+
+def main(argv: list[str] | None = None) -> int:
     import multiprocessing
     multiprocessing.freeze_support()
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "--selftest":
+        from astra.selftest import main as selftest
+        return selftest(argv[1] if len(argv) > 1 else None)
+    if argv and argv[0] in ("--version", "-V"):
+        from astra import __version__
+        from astra.core import core_version
+        text = f"Astra {__version__}, ядро NASA CEA {core_version()}\n"
+        if sys.stdout is not None:
+            sys.stdout.write(text)
+        return 0
     app = QApplication.instance() or QApplication(sys.argv)
+    install_russian_qt(app)
     app.setApplicationName("Astra")
     app.setOrganizationName("Astra")
     win = create_window()

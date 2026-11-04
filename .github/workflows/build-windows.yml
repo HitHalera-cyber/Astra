@@ -1,0 +1,70 @@
+name: Сборка Windows
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # для выпуска по метке v*
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Установка
+        run: python -m pip install . "pyinstaller>=6.10" "markdown>=3.5"
+      - name: Версия
+        id: ver
+        shell: bash
+        run: echo "version=$(python -c 'import astra; print(astra.__version__)')" >> "$GITHUB_OUTPUT"
+      - name: Сборка программы (PyInstaller)
+        run: pyinstaller packaging/astra.spec --noconfirm
+      - name: Самопроверка собранной программы
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\Astra\Astra.exe -ArgumentList "--selftest", "selftest.txt" -Wait -PassThru
+          Get-Content selftest.txt -Encoding utf8
+          if ($p.ExitCode -ne 0) { throw "Самопроверка не пройдена (код $($p.ExitCode))" }
+      - name: Документы для установщика
+        run: python tools/build_docs.py
+      - name: Установщик (Inno Setup)
+        shell: pwsh
+        run: |
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) { choco install innosetup -y --no-progress }
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" packaging\astra.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup: код $LASTEXITCODE" }
+      - name: Проверка установки и удаления
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\installer\*.exe | Select-Object -First 1
+          $dir = "$env:RUNNER_TEMP\AstraTest"
+          $p = Start-Process $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CURRENTUSER", "/DIR=$dir" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Установка: код $($p.ExitCode)" }
+          $p = Start-Process "$dir\Astra.exe" -ArgumentList "--selftest", "installed.txt" -Wait -PassThru
+          Get-Content installed.txt -Encoding utf8
+          if ($p.ExitCode -ne 0) { throw "Самопроверка установленной программы не пройдена" }
+          $p = Start-Process "$dir\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Удаление: код $($p.ExitCode)" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Astra-${{ steps.ver.outputs.version }}-setup
+          path: dist/installer/*.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Astra-${{ steps.ver.outputs.version }}-portable
+          path: dist/Astra
+      - name: Выпуск
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/installer/*.exe --title "Astra $GITHUB_REF_NAME" --notes "Установщик Astra для Windows 10/11 (64-разрядная). Проверьте программу пунктом «Самопроверка Astra» в меню «Пуск»."
