@@ -26,12 +26,24 @@ jobs:
         run: echo "version=$(python -c 'import astra; print(astra.__version__)')" >> "$GITHUB_OUTPUT"
       - name: Сборка программы (PyInstaller)
         run: pyinstaller packaging/astra.spec --noconfirm
+      - name: Проверка состава сборки (Visual C++, NumPy, Qt)
+        run: python tools/check_bundle.py dist/Astra
       - name: Самопроверка собранной программы
         shell: pwsh
         run: |
           $p = Start-Process -FilePath dist\Astra\Astra.exe -ArgumentList "--selftest", "selftest.txt" -Wait -PassThru
           Get-Content selftest.txt -Encoding utf8
           if ($p.ExitCode -ne 0) { throw "Самопроверка не пройдена (код $($p.ExitCode))" }
+      - name: Сообщение о сбое запуска (без numpy.libs)
+        shell: pwsh
+        run: |
+          $broken = "$env:RUNNER_TEMP\AstraBroken"
+          Copy-Item dist\Astra $broken -Recurse
+          Remove-Item "$broken\_internal\numpy.libs" -Recurse -Force
+          $p = Start-Process "$broken\Astra.exe" -ArgumentList "--selftest", "broken.txt" -Wait -PassThru
+          Get-Content broken.txt -Encoding utf8
+          if ($p.ExitCode -ne 3) { throw "Ожидался код 3, получен $($p.ExitCode)" }
+          if (-not (Select-String -Path broken.txt -Pattern "numpy" -Quiet)) { throw "В отчёте нет сведений о numpy" }
       - name: Документы для установщика
         run: python tools/build_docs.py
       - name: Установщик (Inno Setup)
@@ -42,16 +54,23 @@ jobs:
           if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
           & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" packaging\astra.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup: код $LASTEXITCODE" }
-      - name: Проверка установки и удаления
+      - name: Проверка установки, обновления и удаления
         shell: pwsh
         run: |
           $setup = Get-ChildItem dist\installer\*.exe | Select-Object -First 1
-          $dir = "$env:RUNNER_TEMP\AstraTest"
-          $p = Start-Process $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CURRENTUSER", "/DIR=$dir" -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "Установка: код $($p.ExitCode)" }
+          # путь с русскими буквами и пробелами, как в профиле пользователя
+          $dir = "$env:RUNNER_TEMP\Проверка Astra\Программа"
+          foreach ($round in 1, 2) {   # второй проход — установка поверх (обновление)
+            $p = Start-Process $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CURRENTUSER", "/DIR=`"$dir`"" -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "Установка ($round): код $($p.ExitCode)" }
+            if ($round -eq 1) { New-Item "$dir\_internal\numpy\лишний-старый-файл.pyd" -Force | Out-Null }
+          }
+          if (Test-Path "$dir\_internal\numpy\лишний-старый-файл.pyd") { throw "Старые файлы не удалены при обновлении" }
           $p = Start-Process "$dir\Astra.exe" -ArgumentList "--selftest", "installed.txt" -Wait -PassThru
           Get-Content installed.txt -Encoding utf8
           if ($p.ExitCode -ne 0) { throw "Самопроверка установленной программы не пройдена" }
+          python tools/check_bundle.py $dir
+          if ($LASTEXITCODE -ne 0) { throw "Установленной программе не хватает библиотек" }
           $p = Start-Process "$dir\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Удаление: код $($p.ExitCode)" }
       - uses: actions/upload-artifact@v4

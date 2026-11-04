@@ -2,7 +2,9 @@
 # Запуск из корня репозитория:  pyinstaller packaging/astra.spec --noconfirm
 # Результат: dist/Astra/Astra.exe (Windows) или dist/Astra/Astra (Linux).
 
+import os
 from pathlib import Path
+import sys
 
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
@@ -20,6 +22,18 @@ SKIP = ("pyqtgraph.examples", "pyqtgraph.opengl", "pyqtgraph.jupyter")
 datas += collect_data_files("pyqtgraph", excludes=["**/examples/**"])
 hiddenimports += collect_submodules("pyqtgraph", filter=lambda m: not m.startswith(SKIP))
 hiddenimports += collect_submodules("openpyxl")
+
+# Visual C++ 2015–2022 (vcruntime140, vcruntime140_1, msvcp140): кладём в _internal явно,
+# иначе на компьютере без Visual C++ Redistributable NumPy и Qt не загружаются, а на машине
+# сборки это не видно, потому что там библиотеки есть в System32 (tools/check_bundle.py)
+if sys.platform == "win32":
+    VC = ("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll",
+          "msvcp140_atomic_wait.dll", "msvcp140_codecvt_ids.dll", "concrt140.dll")
+    for name in VC:
+        for d in (Path(sys.base_prefix), Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"):
+            if (d / name).is_file():
+                binaries.append((str(d / name), "."))
+                break
 
 # лицензии и уведомления — рядом с программой
 for src, dst in (("NOTICE.md", "."), ("third_party/nasa-cea/LICENSE.txt", "licenses/nasa-cea"),

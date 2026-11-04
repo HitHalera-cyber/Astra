@@ -41,6 +41,10 @@ Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Создать значок на рабочем столе"; GroupDescription: "Дополнительно:"; Flags: unchecked
 
+[InstallDelete]
+; при обновлении удаляем прежнюю папку библиотек, чтобы не смешивались файлы разных сборок
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 Source: "..\dist\Astra\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; руководство и справка (HTML, собираются tools/build_docs.py)
