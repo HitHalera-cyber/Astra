@@ -63,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
     install_russian_qt(app)
     app.setApplicationName("Astra")
     app.setOrganizationName("Astra")
+    from .space import app_icon
+    app.setWindowIcon(app_icon())
     win = create_window()
     win.show()
     return app.exec()

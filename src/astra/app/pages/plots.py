@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QGridLayout, Q
 
 from astra.projects import datasets as D
 
+from ..theme import colors as _colors
 from ..widgets import Page, card, fmt
 
 SOURCE_TITLES = {"thermo": "Термодинамический расчёт", "study": "Параметрическое исследование",
@@ -21,7 +22,7 @@ MODES = {"lines": "Линии", "map": "Цветовая карта (повер�
 # серия цветов, различимых в тёмной и светлой темах
 PALETTE = ["#4c8dff", "#e5534b", "#3fb27f", "#e0a43a", "#a371f7", "#39c5cf", "#f778ba", "#8b949e",
            "#d29922", "#2ea043"]
-THEMES = {"dark": ("#1b1e23", "#e4e7eb"), "light": ("#ffffff", "#1c2127")}
+THEMES = {k: (_colors(k)["plot_bg"], _colors(k)["text"]) for k in ("dark", "light")}
 MAX_CATEGORIES = 16
 
 

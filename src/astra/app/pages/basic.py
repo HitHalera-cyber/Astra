@@ -69,7 +69,7 @@ class SettingsPage(Page):
     title = "Настройки"
     hint = "Оформление и поведение программы. Настройки сохраняются для текущего пользователя Windows."
 
-    def __init__(self, state, apply_theme, parent=None):
+    def __init__(self, state, apply_theme, show_route=None, parent=None):
         super().__init__(parent)
         self.state = state
         self.settings = QSettings("Astra", "Astra")
@@ -85,6 +85,10 @@ class SettingsPage(Page):
         self.autosave.setChecked(self.settings.value("autosave", True, type=bool))
         self.autosave.toggled.connect(self._autosave)
         f.addRow(self.autosave)
+        self.show_route = QCheckBox("Показывать маршрут расчёта под строкой разделов")
+        self.show_route.setChecked(self.settings.value("show_route", True, type=bool))
+        self.show_route.toggled.connect(lambda on: self._route(on, show_route))
+        f.addRow(self.show_route)
         f.addRow("Файл проектов:", QLabel(str(state.store.path)))
         self.body.addWidget(box)
 
@@ -103,6 +107,19 @@ class SettingsPage(Page):
         key = self.theme.currentData()
         self.settings.setValue("theme", key)
         apply_theme(key)
+
+    def apply_theme(self, name: str) -> None:
+        """Синхронизировать список тем, если тема переключена кнопкой в верхней строке."""
+        i = self.theme.findData(name)
+        if i >= 0 and i != self.theme.currentIndex():
+            self.theme.blockSignals(True)
+            self.theme.setCurrentIndex(i)
+            self.theme.blockSignals(False)
+
+    def _route(self, on: bool, show_route) -> None:
+        self.settings.setValue("show_route", on)
+        if show_route is not None:
+            show_route(on)
 
     def _autosave(self, on: bool) -> None:
         self.settings.setValue("autosave", on)

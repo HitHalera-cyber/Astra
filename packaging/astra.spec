@@ -61,6 +61,7 @@ exe = EXE(
     exclude_binaries=True,
     name="Astra",
     console=False,          # оконная программа; --selftest пишет отчёт в файл
+    icon=str(ROOT / "packaging" / "astra.ico"),   # tools/make_icon.py
     upx=False,
 )
 coll = COLLECT(exe, a.binaries, a.datas, name="Astra", upx=False)

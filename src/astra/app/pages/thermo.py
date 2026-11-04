@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QTabWidget, QVBo
 from astra.core import EquilibriumResult, NozzleResult, StatePoint, WAVE_PROBLEMS, WaveResult, core_version, q
 from astra.core.notation import EQUILIBRIUM_PROBLEMS
 
+from ..space import EngineDiagram
 from ..widgets import Page, card, fmt, make_table, ro_item
 from ..worker import CalcThread
 
@@ -77,7 +78,12 @@ class ThermoPage(Page):
         self.status.setWordWrap(True)
         self.body.addWidget(self.status)
 
-        cards = QHBoxLayout()
+        # схема двигателя: для расчёта камеры и сопла заменяет карточки основных величин
+        self.engine = EngineDiagram()
+        self.body.addWidget(self.engine)
+        self.cards_box = QWidget()
+        cards = QHBoxLayout(self.cards_box)
+        cards.setContentsMargins(0, 0, 0, 0)
         self.metric_cards: list[tuple[QLabel, QLabel]] = []
         for _ in range(5):
             frame, lay = card()
@@ -90,7 +96,7 @@ class ThermoPage(Page):
             lay.addWidget(val)
             self.metric_cards.append((name, val))
             cards.addWidget(frame)
-        self.body.addLayout(cards)
+        self.body.addWidget(self.cards_box)
         self.metrics: dict[str, QLabel] = {}
         self._set_metric_keys(METRICS["nozzle"])
 
@@ -112,6 +118,7 @@ class ThermoPage(Page):
         state.project_changed.connect(self.clear)
         state.data_changed.connect(self.refresh)
         self.refresh()
+        self._show_engine(None)
 
     def _set_metric_keys(self, keys: list[str]) -> None:
         self.metrics = {}
@@ -143,6 +150,9 @@ class ThermoPage(Page):
         else:
             ratio = f"Kм = {fmt(c.ratio_value)}" if c.ratio_kind == "Km" else f"α = {fmt(c.ratio_value)}"
         self.summary.setText(f"{kind}; {comps}; {ratio}; ядро NASA CEA {core_version()}")
+        rocket = c.calc == "rocket"
+        self.engine.setVisible(rocket)
+        self.cards_box.setVisible(not rocket)
 
     def clear(self) -> None:
         self.status.setText("Расчёт ещё не выполнялся.")
@@ -150,6 +160,7 @@ class ThermoPage(Page):
         self.values_table.setRowCount(0)
         self.comp_table.setRowCount(0)
         self.notes.setText("")
+        self._show_engine(None)
         self.refresh()
 
     # --- запуск
@@ -183,6 +194,42 @@ class ThermoPage(Page):
         self.state.last_result = result
         self.state.result_ready.emit(result)
 
+    # --- схема двигателя
+    def apply_theme(self, name: str) -> None:
+        self.engine.set_theme(name)
+
+    def _show_engine(self, result: NozzleResult | None) -> None:
+        """Значения ядра по сечениям: камера, критическое сечение, последнее сечение сопла."""
+        def val(p: StatePoint | None, key: str, scale: float | None = None, digits: int = 4) -> str:
+            if p is None or key not in p.values or p[key] is None:
+                return "—"
+            v = p[key] * scale if scale is not None else q(key).to_display(p[key])
+            return fmt(v, digits)
+
+        ch = th = ex = None
+        if result is not None:
+            ch = next((p for p in result.points if p.kind in ("chamber", "chamber_end")), None)
+            th = next((p for p in result.points if p.kind == "throat"), None)
+            exits = result.exits()
+            ex = exits[-1] if exits else None
+        if ex is None:
+            exit_title = "СРЕЗ СОПЛА"
+        elif ex.kind == "pressure_ratio":
+            exit_title = f"СРЕЗ СОПЛА · Pк/P = {val(ex, 'pk_p', 1.0, 4)}"
+        else:
+            exit_title = f"СРЕЗ СОПЛА · ε = {val(ex, 'eps', 1.0, 4)}"
+        stations = [
+            {"title": "КАМЕРА СГОРАНИЯ", "rows": [("Pк", val(ch, "p"), q("p").unit), ("Tк", val(ch, "t"), "К"),
+                                                  ("k", val(ch, "k"), "")]},
+            {"title": "КРИТИЧЕСКОЕ СЕЧЕНИЕ", "rows": [("Tкр", val(th, "t"), "К"), ("Wкр", val(th, "w"), "м/с"),
+                                                      ("M", val(th, "M"), "")]},
+            {"title": exit_title, "rows": [("Pа", val(ex, "p", 1e-3), "кПа"), ("Tа", val(ex, "t"), "К"),
+                                           ("Wа", val(ex, "w"), "м/с")]},
+        ]
+        src = next((p for p in (result.points if result else []) if "c_star" in p.values), None)
+        self.engine.set_data(stations, ("УДЕЛЬНЫЙ ИМПУЛЬС В ПУСТОТЕ", val(ex, "isp_vac", None, 5),
+                                        f"{q('isp_vac').label()} · C* = {val(src, 'c_star', None, 5)} м/с"))
+
     # --- отображение
     def show_result(self, result: EquilibriumResult | NozzleResult | WaveResult) -> None:
         if result.converged:
@@ -204,6 +251,7 @@ class ThermoPage(Page):
                 "isp_vac": exits[-1]["isp_vac"] if exits else None})
             if exits:
                 self.metric_cards[4][0].setText(q("isp_vac").label() + f" (ε = {fmt(exits[-1]['eps'], 4)})")
+            self._show_engine(result)
         elif isinstance(result, WaveResult):
             rows = SHOCK_ROWS if result.problem == "shock" else DET_ROWS
             points = result.points

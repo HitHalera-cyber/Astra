@@ -31,6 +31,7 @@ WizardStyle=modern
 InfoBeforeFile=..\dist\docs\NOTICE.txt
 UninstallDisplayName=Astra {#AppVersion}
 UninstallDisplayIcon={app}\Astra.exe
+SetupIconFile=astra.ico
 VersionInfoVersion={#AppVersion}
 VersionInfoDescription=Установщик Astra
 
