@@ -46,11 +46,13 @@ def run_calc(app, w):
 
 
 def test_all_twelve_sections_present(window):
-    names = [window.nav.item(i).text() for i in range(window.nav.count())]
+    from astra.app.main_window import FULL_NAME_ROLE
+    names = [window.nav.item(i).data(FULL_NAME_ROLE) for i in range(window.nav.count())]
     assert names == ["Главная", "Топливо и окислитель", "Исходные условия", "Термодинамический расчёт",
                      "Параметрические исследования", "Исследование сопла", "Удельный импульс", "Графики",
                      "Таблицы результатов", "База веществ", "Проекты", "Настройки"]
     for i in range(window.nav.count()):
+        assert window.nav.item(i).toolTip() == names[i]     # полное название — в подсказке
         window.nav.setCurrentRow(i)
 
 
@@ -105,10 +107,27 @@ def test_projects_new_duplicate(app, window):
 
 
 def test_theme_switch(app, window):
+    from astra.app.theme import THEMES
     window.apply_theme("light")
-    assert "#eef0f3" in app.styleSheet()
-    window.apply_theme("dark")
-    assert "#1b1e23" in app.styleSheet()
+    assert THEMES["light"]["bg2"] in app.styleSheet() and window.theme_btn.text() == "Тёмная тема"
+    window.toggle_theme()
+    assert window.theme == "dark" and THEMES["dark"]["bg2"] in app.styleSheet()
+    assert window.pages["settings"].theme.currentData() == "dark"   # список тем в настройках следует за кнопкой
+
+
+def test_route_and_engine_follow_results(app, window):
+    steps = {s["key"]: s for s in window.route_steps()}
+    assert steps["propellant"]["done"] and not steps["thermo"]["done"]
+    assert steps["thermo"]["sub"] == "не выполнялся"
+    page = run_calc(app, window)
+    steps = {s["key"]: s for s in window.route_steps()}
+    assert steps["thermo"]["done"] and steps["thermo"]["sub"].startswith("Tк 3384")
+    st = {s["title"]: s for s in page.engine.stations}
+    assert dict((r[0], r[1]) for r in st["КАМЕРА СГОРАНИЯ"]["rows"])["Tк"] == "3384"
+    assert page.engine.headline[1] == "4554,9"                  # Iуд.п на последнем сечении, ε = 75
+    assert not page.engine.isHidden() and page.cards_box.isHidden()
+    window.route.step_clicked.emit("nozzle")
+    assert window.current_key() == "nozzle"
 
 
 def test_qt_binding_keeps_none_refcount(app):
