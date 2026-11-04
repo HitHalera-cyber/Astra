@@ -37,6 +37,13 @@ def run() -> tuple[bool, list[str]]:
 
     lines = [f"Самопроверка Astra, ядро NASA CEA {core_version()}, Python {sys.version.split()[0]}"]
     ok = True
+    # NumPy должен работать на старых процессорах (SSE3, например AMD Phenom II)
+    import numpy
+    from numpy._core import _multiarray_umath
+    extra = sorted(set(_multiarray_umath.__cpu_baseline__) - {"SSE", "SSE2", "SSE3"})
+    lines.append(f"{'ОШИБКА  ' if extra else 'ПРОЙДЕНО'}  NumPy {numpy.__version__}: базовые команды процессора "
+                 + (f"сверх SSE3: {', '.join(extra)}" if extra else "не выше SSE3"))
+    ok = ok and not extra
     prop = Propellant((Component("H2(L)", FUEL, t0=20.27), Component("O2(L)", OXIDIZER, t0=90.17)))
     res = CeaSession(prop).nozzle(Ratio.km(5.55157), 53.3172e5, eps=EX8["eps"])
     ok &= bool(res.converged)

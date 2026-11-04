@@ -10,7 +10,10 @@ readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "cea==3.3.4",
-    "numpy>=1.26",
+    # NumPy 2.4+ для x86-64 собран под x86-64-v2 (SSSE3, SSE4.1/4.2, POPCNT) и не загружается
+    # на процессорах без этих команд, например AMD Phenom II («сбой в программе инициализации
+    # библиотеки DLL»). 2.3.x требует только SSE3. См. tests/test_cpu_baseline.py.
+    "numpy>=2.0,<2.4",
     "pyqtgraph>=0.13.7",
     "openpyxl>=3.1",
     # PySide6 6.12.0 на Python 3.11 ошибочно уменьшает счётчик ссылок None при каждом
