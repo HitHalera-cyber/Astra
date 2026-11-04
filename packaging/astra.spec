@@ -52,7 +52,9 @@ a = Analysis(
 )
 # лишнее для оконной программы: QML/Quick, 3D, веб, переводы Qt, кроме русского
 DROP = ("Qt6Quick", "Qt6Qml", "Qt63D", "Qt6WebEngine", "Qt6Pdf", "Qt6VirtualKeyboard", "Qt6Multimedia",
-        "qml/", "qml\\")
+        "qml/", "qml\\",
+        # модули Qt к удалённым библиотекам: без них не загружаются (tools/check_bundle.py)
+        "imageformats/qpdf.dll", "platforminputcontexts/qtvirtualkeyboardplugin.dll")
 
 
 def keep(entry):
