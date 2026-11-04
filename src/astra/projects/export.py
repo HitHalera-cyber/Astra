@@ -184,6 +184,12 @@ def transpose(ds: Dataset, label_key: str = "point") -> Dataset:
     return Dataset(ds.name, cols, rows, ds.meta)
 
 
+def _custom_text(x) -> str:
+    mw = f", μ = {x.mw:g} г/моль" if x.mw is not None else ""
+    return (f"; собственное вещество: {' '.join(f'{el} {n:g}' for el, n in x.formula.items())}, "
+            f"энтальпия {x.enthalpy / 1000:g} кДж/моль{mw}")
+
+
 def project_inputs(project) -> dict[str, str]:
     """Исходные данные проекта для отчёта (в единицах отображения)."""
     from astra.core import q
@@ -191,7 +197,8 @@ def project_inputs(project) -> dict[str, str]:
     c = project.conditions
     roles = {"fuel": "горючее", "oxidizer": "окислитель", "mixture": "компонент смеси"}
     basis = "массовые" if c.basis == "mass" else "мольные"
-    out = {"Компоненты": "; ".join(f"{x.name} ({roles.get(x.role, x.role)}, доля {x.amount:g}, T = {x.t0:g} К)"
+    out = {"Компоненты": "; ".join(f"{x.name} ({roles.get(x.role, x.role)}, доля {x.amount:g}, T = {x.t0:g} К"
+                                   + (_custom_text(x) if x.is_custom else "") + ")"
                                    for x in project.components) or "не заданы",
            "Доли компонентов": basis}
     calc = ("Камера сгорания и сопло" if c.calc == "rocket" else
